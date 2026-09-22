@@ -31,9 +31,38 @@ REQUIRED_SCENE_FILES = (
     "waypoints_by_region.json",
     "scene_prompt.txt",
 )
+RUN_CONFIG_KEYS = {
+    "scene_dir",
+    "output_root",
+    "llm_config",
+    "prompt",
+    "count",
+    "max_attempts",
+    "pedestrians",
+    "overwrite",
+    "dry_run",
+}
+RUN_DEFAULTS = {
+    "count": 5,
+    "max_attempts": 3,
+    "pedestrians": 2,
+    "overwrite": False,
+    "dry_run": False,
+}
+REQUIRED_RUN_VALUES = ("scene_dir", "output_root", "llm_config", "prompt")
 
 
-def parse_args() -> argparse.Namespace:
+def load_run_config(path: Path) -> dict[str, Any]:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a YAML object")
+    unknown = sorted(set(data) - RUN_CONFIG_KEYS)
+    if unknown:
+        raise ValueError(f"Unknown run config keys in {path}: {', '.join(unknown)}")
+    return data
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate multiple distinct trajectory scenarios for one prepared scene."
     )
@@ -51,7 +80,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-attempts",
         type=int,
-        default=3,
         help="Maximum generation attempts per variant. Default: 3.",
     )
     parser.add_argument(
@@ -90,12 +118,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--overwrite",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help="Regenerate variants whose output files already exist.",
     )
     parser.add_argument(
         "--dry-run",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help="Print planned variant output paths without calling the LLM.",
     )
     parser.add_argument(

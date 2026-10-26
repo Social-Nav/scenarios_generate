@@ -1,0 +1,100 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "Visitor changing waiting spot",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "spawn_waypoint": "wp_r00_waiting_area_023",
+      "waypoints": [
+        "wp_r00_waiting_area_024",
+        "wp_r00_waiting_area_auto_022",
+        "wp_r00_waiting_area_auto_028",
+        "wp_r00_waiting_area_auto_061",
+        "wp_r00_waiting_area_016",
+        "wp_r00_waiting_area_036",
+        "wp_r00_waiting_area_auto_027",
+        "wp_r00_waiting_area_015"
+      ],
+      "velocity": 0.8,
+      "desired_velocity": 1.0,
+      "behavior_mode": "neutral",
+      "behavior": "Walk toward the opposite seating section along a nearly straight aisle, using normal avoidance."
+    },
+    {
+      "name": "hunav_2",
+      "role": "Visitor returning to companion",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "spawn_waypoint": "wp_r00_waiting_area_auto_032",
+      "waypoints": [
+        "wp_r00_waiting_area_auto_013",
+        "wp_r00_waiting_area_auto_036",
+        "wp_r00_waiting_area_auto_063",
+        "wp_r00_waiting_area_auto_038",
+        "wp_r00_waiting_area_047",
+        "wp_r00_waiting_area_006"
+      ],
+      "velocity": 0.9,
+      "desired_velocity": 1.1,
+      "behavior_mode": "neutral",
+      "behavior": "Return to a companion along a straight parallel lane, passing the robot with normal avoidance."
+    },
+    {
+      "name": "hunav_3",
+      "role": "Visitor approaching another waiting spot",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "spawn_waypoint": "wp_r00_waiting_area_029",
+      "waypoints": [
+        "wp_r00_waiting_area_030",
+        "wp_r00_waiting_area_031",
+        "wp_r00_waiting_area_auto_024",
+        "wp_r00_waiting_area_032",
+        "wp_r00_waiting_area_auto_008",
+        "wp_r00_waiting_area_033"
+      ],
+      "velocity": 0.7,
+      "desired_velocity": 0.9,
+      "behavior_mode": "neutral",
+      "behavior": "Move steadily toward another waiting spot along the outer parallel aisle."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 0,
+      "label": "waiting_area"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "waiting_area"
+    },
+    "start_waypoint": "wp_r00_waiting_area_auto_026",
+    "goal_waypoint": "wp_r00_waiting_area_010",
+    "social_attributes": "neutral",
+    "social_yielding": false,
+    "behavior": "Traverse the open waiting aisle on a straight route parallel and close to the pedestrians, using balanced social navigation."
+  }
+}

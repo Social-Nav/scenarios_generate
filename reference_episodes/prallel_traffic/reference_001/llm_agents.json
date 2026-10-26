@@ -1,0 +1,71 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "Visitor changing waiting seats",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "spawn_waypoint": "wp_r00_waiting_area_024",
+      "waypoints": [
+        "wp_r00_waiting_area_auto_022",
+        "wp_r00_waiting_area_auto_028",
+        "wp_r00_waiting_area_auto_061",
+        "wp_r00_waiting_area_016",
+        "wp_r00_waiting_area_015",
+        "wp_r00_waiting_area_014",
+        "wp_r00_waiting_area_013"
+      ],
+      "velocity": 0.8,
+      "desired_velocity": 1.0,
+      "behavior_mode": "neutral",
+      "behavior": "Walk toward the opposite seating section along a nearly straight lane, passing the robot in the adjacent lane with normal social avoidance."
+    },
+    {
+      "name": "hunav_2",
+      "role": "Visitor approaching a companion",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "spawn_waypoint": "wp_r00_waiting_area_032",
+      "waypoints": [
+        "wp_r00_waiting_area_031",
+        "wp_r00_waiting_area_030",
+        "wp_r00_waiting_area_029",
+        "wp_r00_waiting_area_028"
+      ],
+      "velocity": 0.7,
+      "desired_velocity": 0.9,
+      "behavior_mode": "neutral",
+      "behavior": "Walk straight toward a companion at the other end of the waiting area, traveling parallel and close to the robot."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 0,
+      "label": "waiting_area"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "waiting_area"
+    },
+    "start_waypoint": "wp_r00_waiting_area_auto_036",
+    "goal_waypoint": "wp_r00_waiting_area_005",
+    "social_attributes": "neutral",
+    "social_yielding": false,
+    "behavior": "Make a straight service transfer through the open waiting area between two nearby parallel pedestrian lanes."
+  }
+}

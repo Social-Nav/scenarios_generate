@@ -19,6 +19,7 @@ from mark_region_transitions import (
     load_waypoint_data,
 )
 from mark_waypoints_by_region import draw_region_overlays, load_regions
+from scene_names import resolve_scene_dir
 
 
 def parse_args() -> argparse.Namespace:
@@ -110,7 +111,7 @@ def draw_summary(ax: plt.Axes, waypoints: list[dict[str, Any]], waypoint_path: P
 
 def main() -> None:
     args = parse_args()
-    scene_dir = Path(args.scene_dir).expanduser().resolve()
+    scene_dir = resolve_scene_dir(Path(args.scene_dir))
     waypoint_path = (
         Path(args.waypoints).expanduser().resolve()
         if args.waypoints

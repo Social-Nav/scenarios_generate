@@ -1,0 +1,45 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "shopper",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "shop"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "shop"
+      },
+      "spawn_waypoint": "wp_r00_shop_046",
+      "waypoints": [
+        "wp_r00_shop_045",
+        "wp_r00_shop_044",
+        "wp_r00_shop_031",
+        "wp_r00_shop_auto_146",
+        "wp_r00_shop_019",
+        "wp_r00_shop_020"
+      ],
+      "desired_velocity": 1.0,
+      "behavior_mode": "passive",
+      "behavior": "Leave the shelf aisle for the open shopping area. Stop and watch the approaching robot, allowing it to pass before continuing."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 0,
+      "label": "shop"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "shop"
+    },
+    "start_waypoint": "wp_r00_shop_045",
+    "goal_waypoint": "wp_r00_shop_049",
+    "social_attributes": "neutral",
+    "social_yielding": true,
+    "behavior": "Travel down the shelf aisle toward the lower merchandise section, meeting the nearby shopper head-on. Slow or stop to yield when the shopper occupies the shared passage."
+  }
+}

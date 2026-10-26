@@ -11,16 +11,22 @@ from typing import Any
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
+import matplotlib
+
+# The editor owns the `s` shortcut. Matplotlib otherwise saves Figure_1.png too.
+matplotlib.rcParams["keymap.save"] = []
+
 import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 from matplotlib.backend_bases import KeyEvent, MouseButton, MouseEvent
 from PIL import Image
 
+from scene_names import canonical_scene_id, resolve_scene_dir
+
 
 DEFAULT_BEHAVIOR_TREE = "BTRegularNav.xml"
 DEFAULT_MODEL = "pedestrian"
-DEFAULT_VELOCITY = 0.8
 DEFAULT_DESIRED_VELOCITY = 1.0
 
 
@@ -91,8 +97,25 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--scene-dir", required=True, help="Scene directory containing topdown_mapping.json and images.")
     parser.add_argument(
-        "--output",
-        help="Output scenario YAML. Defaults to <scene-dir>/manual_scenario.yaml.",
+        "--output-folder",
+        "--output-dir",
+        dest="output_folder",
+        required=True,
+        help=(
+            "Episode folder to create. Writes manual_scenario.yaml, scenario_preview.png, "
+            "reference_episode.json, and metadata.yaml. --output-dir is a deprecated alias."
+        ),
+    )
+    parser.add_argument(
+        "--episode-id",
+        help="Reference episode id. Defaults to the output folder name.",
+    )
+    parser.add_argument(
+        "--interaction-type",
+        help=(
+            "Interaction type written to metadata.yaml. Defaults to the reference set "
+            "directory name (the output folder's parent)."
+        ),
     )
     parser.add_argument(
         "--background",
@@ -113,7 +136,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-snap", action="store_true", help="Disable waypoint snapping.")
     parser.add_argument("--round", type=int, default=5, help="Decimal places for world coordinates/yaw.")
     parser.add_argument("--robot-behavior", default="manually clicked robot route")
-    parser.add_argument("--human-velocity", type=float, default=DEFAULT_VELOCITY)
     parser.add_argument("--human-desired-velocity", type=float, default=DEFAULT_DESIRED_VELOCITY)
     parser.add_argument("--no-show", action="store_true", help="Write an empty/default preview without opening UI.")
     return parser.parse_args()
@@ -241,6 +263,8 @@ def scenario_from_tracks(tracks: list[Track], mapping: CameraRayMapping, args: a
             scenario["robot"] = {
                 "name": "robot",
                 "pose": pose,
+                "social_attributes": "neutral",
+                "social_yielding": False,
                 "waypoints": waypoints,
                 "behavior": args.robot_behavior,
             }
@@ -252,13 +276,53 @@ def scenario_from_tracks(tracks: list[Track], mapping: CameraRayMapping, args: a
                     "model": DEFAULT_MODEL,
                     "pose": pose,
                     "behavior_tree": DEFAULT_BEHAVIOR_TREE,
-                    "velocity": rounded(args.human_velocity, args.round),
+                    "behavior": {"type": 1},
                     "desired_velocity": rounded(args.human_desired_velocity, args.round),
                     "waypoints": waypoints,
                 }
             )
 
     return scenario
+
+
+def reference_episode_from_tracks(tracks: list[Track], episode_id: str) -> dict[str, Any]:
+    agents: list[dict[str, Any]] = []
+    robot: dict[str, Any] | None = None
+    for track in tracks:
+        waypoint_ids = [point.waypoint_id for point in track.points]
+        if len(waypoint_ids) < 2 or any(waypoint_id is None for waypoint_id in waypoint_ids):
+            continue
+        ids = [str(waypoint_id) for waypoint_id in waypoint_ids]
+        route = {"spawn_waypoint": ids[0], "waypoints": ids[1:]}
+        if track.kind == "robot":
+            robot = {
+                "name": "robot",
+                "start_waypoint": ids[0],
+                "goal_waypoint": ids[-1],
+                "waypoints": ids[1:],
+                "social_attributes": "neutral",
+                "social_yielding": False,
+            }
+        else:
+            agents.append(
+                {
+                    "name": f"hunav_{len(agents) + 1}",
+                    "behavior_mode": "neutral",
+                    **route,
+                }
+            )
+
+    if robot is None:
+        raise ValueError("Reference episode needs a robot track with snapped waypoints")
+    if not agents:
+        raise ValueError("Reference episode needs at least one human track with snapped waypoints")
+    return {
+        "episode_id": episode_id,
+        "interaction_type": "manual_reference",
+        "description": "Manually clicked reference episode.",
+        "agents": agents,
+        "robot": robot,
+    }
 
 
 def write_scenario(path: Path, scenario: dict[str, Any]) -> None:
@@ -346,8 +410,9 @@ def save_preview(
 
 def main() -> None:
     args = parse_args()
-    scene_dir = Path(args.scene_dir).expanduser().resolve()
-    output_path = Path(args.output).expanduser().resolve() if args.output else scene_dir / "manual_scenario.yaml"
+    scene_dir = resolve_scene_dir(Path(args.scene_dir))
+    output_dir = Path(args.output_folder).expanduser().resolve()
+    output_path = output_dir / "manual_scenario.yaml"
     mapping_path = Path(args.mapping).expanduser().resolve() if args.mapping else scene_dir / "topdown_mapping.json"
     waypoint_path = Path(args.waypoints).expanduser().resolve() if args.waypoints else scene_dir / "waypoints_by_region.json"
     snap_radius = 0.0 if args.no_snap else args.snap_radius
@@ -362,7 +427,7 @@ def main() -> None:
             flush=True,
         )
     waypoints = load_waypoints(waypoint_path)
-    preview_path = output_path.with_name(f"{output_path.stem}_preview.png")
+    preview_path = output_dir / "scenario_preview.png"
 
     tracks: list[Track] = []
     active: Track | None = None
@@ -404,6 +469,8 @@ def main() -> None:
         )
 
     def save_all() -> None:
+        episode_id = args.episode_id or output_dir.name
+        reference_episode = reference_episode_from_tracks(tracks, episode_id)
         scenario = scenario_from_tracks(tracks, mapping, args)
         write_scenario(output_path, scenario)
         save_preview(
@@ -414,6 +481,26 @@ def main() -> None:
             not args.hide_waypoints,
             args.show_waypoint_names,
         )
+        reference_path = output_dir / "reference_episode.json"
+        reference_path.write_text(
+            json.dumps(reference_episode, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(f"Wrote {reference_path}", flush=True)
+
+        metadata_path = output_dir / "metadata.yaml"
+        metadata_path.write_text(
+            yaml.safe_dump(
+                {
+                    "source_scene_id": canonical_scene_id(scene_dir.name),
+                    "interaction_type": args.interaction_type or output_dir.parent.name,
+                },
+                sort_keys=False,
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+        )
+        print(f"Wrote {metadata_path}", flush=True)
 
     if args.no_show:
         save_all()

@@ -1,0 +1,43 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.66289, -5.64475, 79.69515]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+    social_force_factor: 10.0
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.56398, -5.10074, 80.21759]
+  - [-0.44034, -4.38364, 107.74467]
+  - [-0.63816, -3.76545, 93.17983]
+  - [-0.66289, -3.32035, 87.31622]
+  - [-0.58871, -1.73778, 90.0]
+  - [-0.58871, -1.51523, 90.0]
+  - [-0.58871, -0.27884, 90.0]
+- name: hunav_2
+  model: pedestrian
+  pose: [0.6724, -2.72688, -90.0]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+    social_force_factor: 10.0
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [0.6724, -4.43309, -90.0]
+  - [0.6724, -5.39747, -90.0]
+  - [0.6724, -6.68331, -90.0]
+  - [0.6724, -7.89497, -90.0]
+robot:
+  name: robot
+  pose: [-0.09416, -1.71305, -90.0]
+  social_attributes: neutral
+  social_yielding: false
+  waypoints:
+  - [-0.09416, -6.98004, -90.0]
+  behavior: Make a straight service transfer through the open waiting area between
+    two nearby parallel pedestrian lanes.

@@ -1,0 +1,40 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "Staff member",
+      "model": "female_adult_business_02",
+      "from_region": {
+        "region_id": 4,
+        "label": "corridor"
+      },
+      "to_region": {
+        "region_id": 4,
+        "label": "corridor"
+      },
+      "spawn_waypoint": "wp_r04_corridor_003",
+      "waypoints": [
+        "wp_r04_corridor_004",
+        "wp_r04_corridor_005",
+        "wp_r04_corridor_006"
+      ],
+      "velocity": 1.1,
+      "desired_velocity": 1.3,
+      "behavior": "Walk straight along the corridor toward the classroom side, remaining ahead of the robot."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 4,
+      "label": "corridor"
+    },
+    "to_region": {
+      "region_id": 4,
+      "label": "corridor"
+    },
+    "start_waypoint": "wp_r04_corridor_001",
+    "goal_waypoint": "wp_r04_corridor_007",
+    "behavior": "Travel straight in the pedestrian's direction from directly behind, maintaining a safe following distance and yielding before continuing beyond the pedestrian's destination."
+  }
+}

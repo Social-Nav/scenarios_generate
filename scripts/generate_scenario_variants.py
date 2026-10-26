@@ -8,20 +8,27 @@ import os
 import random
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageDraw
+import yaml
 
 from generate_scenario_from_llm import (
     DEFAULT_MODEL,
+    FOLLOWING_HUMAN_SOCIAL_FORCE_FACTOR,
     TOKEN_USAGE_PREFIX,
     TokenUsage,
     combine_token_usage,
     format_token_usage,
+    robot_intermediate_waypoints_requested,
+    robot_tolerances_requested,
     token_usage_from_dict,
+    validate_llm_social_fields,
     validated_agent_models,
 )
+from scene_names import canonical_scene_id, resolve_scene_dir
 
 
 REQUIRED_SCENE_FILES = (
@@ -35,19 +42,39 @@ RUN_CONFIG_KEYS = {
     "scene_dir",
     "output_root",
     "llm_config",
+    "reference_root",
+    "reference_sets",
+    "include_reference_episodes",
     "prompt",
     "count",
+    "batch_size",
     "max_attempts",
     "pedestrians",
+    "min_pedestrians",
+    "max_pedestrians",
+    "seed",
+    "history_window",
     "overwrite",
     "dry_run",
+    "skip_previews",
+    "skip_overview",
 }
 RUN_DEFAULTS = {
     "count": 5,
+    "batch_size": 10,
     "max_attempts": 3,
-    "pedestrians": 2,
+    "pedestrians": None,
+    "min_pedestrians": None,
+    "max_pedestrians": None,
+    "seed": 20260930,
+    "history_window": 12,
     "overwrite": False,
     "dry_run": False,
+    "skip_previews": False,
+    "skip_overview": False,
+    "reference_root": "reference_episodes",
+    "reference_sets": None,
+    "include_reference_episodes": True,
 }
 REQUIRED_RUN_VALUES = ("scene_dir", "output_root", "llm_config", "prompt")
 
@@ -66,15 +93,32 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate multiple distinct trajectory scenarios for one prepared scene."
     )
-    parser.add_argument("--scene-dir", required=True, help="Prepared scene directory.")
-    parser.add_argument("--output-root", required=True, help="Root directory for all generated outputs.")
-    parser.add_argument("--llm-config", required=True, help="LLM YAML configuration path.")
-    parser.add_argument("--prompt", required=True, help="Common scenario request for every variant.")
-    parser.add_argument("--count", type=int, default=5, help="Number of distinct variants. Default: 5.")
+    parser.add_argument(
+        "--config",
+        help="YAML run configuration. Explicit command-line options override its values.",
+    )
+    parser.add_argument("--scene-dir", help="Prepared scene directory.")
+    parser.add_argument("--output-root", help="Root directory for all generated outputs.")
+    parser.add_argument("--llm-config", help="LLM YAML configuration path.")
+    parser.add_argument("--prompt", help="Common scenario request for every variant.")
+    parser.add_argument("--reference-root", help="Root directory containing reference sets.")
+    parser.add_argument(
+        "--reference-set",
+        action="append",
+        dest="reference_sets",
+        help="Reference set to include. Repeat to include multiple sets.",
+    )
+    parser.add_argument(
+        "--include-reference-episodes",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Include configured reference episodes in the LLM prompt.",
+    )
+    parser.add_argument("--count", type=int, help="Number of distinct variants. Default: 5.")
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=10,
+        default=None,
         help="Scenarios requested in each LLM call. Default: 10; use 1 for legacy mode.",
     )
     parser.add_argument(
@@ -104,13 +148,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--seed",
         type=int,
-        default=20260930,
+        default=None,
         help="Seed used to shuffle a ranged agent-count schedule.",
     )
     parser.add_argument(
         "--history-window",
         type=int,
-        default=12,
+        default=None,
         help=(
             "Number of recent accepted route summaries included in the next LLM prompt. "
             "Default: 12."
@@ -130,15 +174,43 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--skip-previews",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help="Do not render per-scenario previews or the combined overview.",
     )
     parser.add_argument(
         "--skip-overview",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help="Render individual previews but do not create the combined overview image.",
     )
-    return parser.parse_args()
+    cli_args = parser.parse_args(argv)
+
+    values = dict(RUN_DEFAULTS)
+    if cli_args.config:
+        config_path = Path(cli_args.config).expanduser().resolve()
+        if not config_path.is_file():
+            parser.error(f"run config not found: {config_path}")
+        try:
+            values.update(load_run_config(config_path))
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            parser.error(str(exc))
+
+    for key in RUN_CONFIG_KEYS:
+        cli_value = getattr(cli_args, key, None)
+        if cli_value is not None:
+            values[key] = cli_value
+
+    missing = [key for key in REQUIRED_RUN_VALUES if not values.get(key)]
+    if missing:
+        parser.error(
+            f"missing required settings: {', '.join(missing)}; "
+            "provide them in --config or as command-line options"
+        )
+    if values["pedestrians"] is None and values["min_pedestrians"] is None:
+        values["pedestrians"] = 2
+    values["config"] = cli_args.config
+    return argparse.Namespace(**values)
 
 
 def build_agent_count_schedule(
@@ -213,6 +285,7 @@ def scenario_routes(data: Any, expected_pedestrians: int) -> tuple[list[tuple[st
         raise ValueError(f"expected {expected_pedestrians} agents, got {actual}")
     if not all(isinstance(agent, dict) for agent in agents):
         raise ValueError("every agent must be a JSON object")
+    validate_llm_social_fields(data)
     validated_agent_models(agents, DEFAULT_MODEL)
     robot = data.get("robot")
     if not isinstance(robot, dict):
@@ -437,7 +510,7 @@ def remove_rejected_batch_outputs(
 ) -> None:
     for variant_number, _ in batch_items:
         variant_dir = scene_output_root / f"scenario_{variant_number:03d}"
-        for filename in ("llm_agents.json", "generated_scenario.yaml"):
+        for filename in ("llm_agents.json", "scenario.yaml", "generated_scenario.yaml"):
             path = variant_dir / filename
             if path.is_file():
                 path.unlink()
@@ -446,8 +519,9 @@ def remove_rejected_batch_outputs(
 def run_batched(
     args: argparse.Namespace,
     agent_count_schedule: list[int],
+    interaction_type: str,
 ) -> None:
-    scene_dir = Path(args.scene_dir).expanduser().resolve()
+    scene_dir = resolve_scene_dir(Path(args.scene_dir))
     output_root = Path(args.output_root).expanduser().resolve()
     llm_config = Path(args.llm_config).expanduser().resolve()
     batch_generator = (
@@ -465,7 +539,9 @@ def run_batched(
     if not batch_generator.is_file():
         raise FileNotFoundError(f"Batch generator not found: {batch_generator}")
 
-    scene_output_root = output_root / scene_dir.name
+    scene_id = canonical_scene_id(scene_dir.name)
+    scene_output_root = output_root / scene_id / run_folder_name(interaction_type)
+    print(f"RUN OUTPUT {scene_output_root}", flush=True)
     signatures: set[str] = set()
     summaries: list[str] = []
     pending: list[tuple[int, int]] = []
@@ -479,11 +555,11 @@ def run_batched(
     for variant_number, expected_agents in enumerate(agent_count_schedule, start=1):
         variant_dir = scene_output_root / f"scenario_{variant_number:03d}"
         llm_output = variant_dir / "llm_agents.json"
-        scenario_output = variant_dir / "generated_scenario.yaml"
+        scenario_output = existing_scenario_path(variant_dir)
         if (
             not args.overwrite
             and llm_output.is_file()
-            and scenario_output.is_file()
+            and scenario_output is not None
         ):
             try:
                 agent_routes, robot_route = load_existing_variant(
@@ -497,6 +573,7 @@ def run_batched(
                     route_summary(variant_number, agent_routes, robot_route)
                 )
                 existing += 1
+                write_scenario_metadata(variant_dir, scene_id, interaction_type)
                 print(f"EXISTS scenario_{variant_number:03d}")
                 print(
                     f"TOKENS scenario_{variant_number:03d}: 0 "
@@ -567,6 +644,18 @@ def run_batched(
                 "--batch-items",
                 json.dumps(batch_payload, separators=(",", ":")),
             ]
+            command.extend(reference_command_args(args, scene_dir))
+            if robot_intermediate_waypoints_requested(args.prompt):
+                command.append("--robot-intermediate-waypoints")
+            if robot_tolerances_requested(args.prompt):
+                command.append("--robot-tolerances")
+            if interaction_type == "following_human":
+                command.extend(
+                    [
+                        "--human-social-force-factor",
+                        str(FOLLOWING_HUMAN_SOCIAL_FORCE_FACTOR),
+                    ]
+                )
             print(
                 f"GENERATING {batch_label} | batch {batch_index}/{total_batches} | "
                 f"{len(batch_items)} scenarios | "
@@ -629,6 +718,11 @@ def run_batched(
                 summaries.append(
                     route_summary(variant_number, agent_routes, robot_route)
                 )
+                write_scenario_metadata(
+                    scene_output_root / f"scenario_{variant_number:03d}",
+                    scene_id,
+                    interaction_type,
+                )
                 print(f"GENERATED scenario_{variant_number:03d}", flush=True)
             generated += len(accepted_items)
             accepted = True
@@ -676,7 +770,9 @@ def run_batched(
     preview_paths: list[Path] = []
     for variant_number in range(1, args.count + 1):
         variant_dir = scene_output_root / f"scenario_{variant_number:03d}"
-        scenario_path = variant_dir / "generated_scenario.yaml"
+        scenario_path = existing_scenario_path(variant_dir)
+        if scenario_path is None:
+            raise FileNotFoundError(f"Missing scenario YAML in {variant_dir}")
         preview_path = variant_dir / "scenario_preview.png"
         if preview_path.is_file() and not args.overwrite:
             print(f"EXISTS PREVIEW scenario_{variant_number:03d}", flush=True)
@@ -699,6 +795,55 @@ def run_batched(
     print_total_token_usage(total_usage, total_api_calls, total_unreported_calls)
 
 
+def write_scenario_metadata(
+    variant_dir: Path,
+    source_scene_id: str,
+    interaction_type: str,
+) -> Path:
+    metadata_path = variant_dir / "metadata.yaml"
+    metadata_path.write_text(
+        yaml.safe_dump(
+            {
+                "source_scene_id": source_scene_id,
+                "interaction_type": interaction_type,
+            },
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    return metadata_path
+
+
+def existing_scenario_path(variant_dir: Path) -> Path | None:
+    for filename in ("scenario.yaml", "generated_scenario.yaml"):
+        path = variant_dir / filename
+        if path.is_file():
+            return path
+    return None
+
+
+def reference_command_args(
+    args: argparse.Namespace,
+    scene_dir: Path,
+) -> list[str]:
+    if not args.include_reference_episodes:
+        return ["--no-include-reference-episodes"]
+
+    command_args = ["--reference-scene-root", str(scene_dir.parent)]
+    reference_root = Path(args.reference_root).expanduser().resolve()
+    for reference_set in args.reference_sets:
+        command_args.extend(
+            ["--reference-dir", str(reference_root / reference_set)]
+        )
+    return command_args
+
+
+def run_folder_name(interaction_type: str, started_at: datetime | None = None) -> str:
+    timestamp = (started_at or datetime.now()).strftime("%Y%m%d_%H%M")
+    return f"{interaction_type}_{timestamp}"
+
+
 def main() -> None:
     args = parse_args()
     if args.count < 1:
@@ -709,6 +854,13 @@ def main() -> None:
         raise ValueError("--batch-size must be at least 1")
     if args.history_window < 0:
         raise ValueError("--history-window cannot be negative")
+    if not args.reference_sets or len(args.reference_sets) != 1:
+        raise ValueError(
+            "Exactly one reference set is required because it defines the generated "
+            "interaction_type"
+        )
+    interaction_type = args.reference_sets[0]
+
     agent_count_schedule = build_agent_count_schedule(
         args.count,
         args.pedestrians,
@@ -717,10 +869,10 @@ def main() -> None:
         args.seed,
     )
     if args.batch_size > 1:
-        run_batched(args, agent_count_schedule)
+        run_batched(args, agent_count_schedule, interaction_type)
         return
 
-    scene_dir = Path(args.scene_dir).expanduser().resolve()
+    scene_dir = resolve_scene_dir(Path(args.scene_dir))
     output_root = Path(args.output_root).expanduser().resolve()
     llm_config = Path(args.llm_config).expanduser().resolve()
     generator = Path(__file__).with_name("generate_scenario_from_llm.py").resolve()
@@ -734,7 +886,13 @@ def main() -> None:
     if not llm_config.is_file():
         raise FileNotFoundError(f"LLM config not found: {llm_config}")
 
-    scene_output_root = output_root / scene_dir.name
+    scene_id = canonical_scene_id(scene_dir.name)
+    run_output_root = (
+        output_root
+        / scene_id
+        / run_folder_name(interaction_type)
+    )
+    print(f"RUN OUTPUT {run_output_root}", flush=True)
     signatures: set[str] = set()
     summaries: list[str] = []
     generated = 0
@@ -745,11 +903,12 @@ def main() -> None:
 
     for variant_number in range(1, args.count + 1):
         expected_agents = agent_count_schedule[variant_number - 1]
-        variant_dir = scene_output_root / f"scenario_{variant_number:03d}"
+        variant_dir = run_output_root / f"scenario_{variant_number:03d}"
         llm_output = variant_dir / "llm_agents.json"
-        scenario_output = variant_dir / "generated_scenario.yaml"
+        scenario_output = variant_dir / "scenario.yaml"
+        existing_scenario = existing_scenario_path(variant_dir)
 
-        if not args.overwrite and llm_output.is_file() and scenario_output.is_file():
+        if not args.overwrite and llm_output.is_file() and existing_scenario is not None:
             try:
                 agent_routes, robot_route = load_existing_variant(llm_output, expected_agents)
                 signature = scenario_signature(agent_routes, robot_route)
@@ -758,6 +917,7 @@ def main() -> None:
                     raise SystemExit(1)
                 signatures.add(signature)
                 summaries.append(route_summary(variant_number, agent_routes, robot_route))
+                write_scenario_metadata(variant_dir, scene_id, interaction_type)
                 existing += 1
                 print(f"EXISTS scenario_{variant_number:03d}")
                 print(
@@ -800,6 +960,18 @@ def main() -> None:
                 "--output",
                 str(scenario_output),
             ]
+            command.extend(reference_command_args(args, scene_dir))
+            if robot_intermediate_waypoints_requested(args.prompt):
+                command.append("--robot-intermediate-waypoints")
+            if robot_tolerances_requested(args.prompt):
+                command.append("--robot-tolerances")
+            if interaction_type == "following_human":
+                command.extend(
+                    [
+                        "--human-social-force-factor",
+                        str(FOLLOWING_HUMAN_SOCIAL_FORCE_FACTOR),
+                    ]
+                )
             print(
                 f"GENERATING scenario_{variant_number:03d} attempt {attempt}/{args.max_attempts}",
                 flush=True,
@@ -840,6 +1012,7 @@ def main() -> None:
 
             signatures.add(signature)
             summaries.append(route_summary(variant_number, agent_routes, robot_route))
+            write_scenario_metadata(variant_dir, scene_id, interaction_type)
             generated += 1
             accepted = True
             print(f"GENERATED scenario_{variant_number:03d}", flush=True)
@@ -877,8 +1050,10 @@ def main() -> None:
 
     preview_paths: list[Path] = []
     for variant_number in range(1, args.count + 1):
-        variant_dir = scene_output_root / f"scenario_{variant_number:03d}"
-        scenario_path = variant_dir / "generated_scenario.yaml"
+        variant_dir = run_output_root / f"scenario_{variant_number:03d}"
+        scenario_path = existing_scenario_path(variant_dir)
+        if scenario_path is None:
+            raise FileNotFoundError(f"Missing scenario YAML in {variant_dir}")
         preview_path = variant_dir / "scenario_preview.png"
         if preview_path.is_file() and not args.overwrite:
             print(f"EXISTS PREVIEW scenario_{variant_number:03d}", flush=True)
@@ -894,7 +1069,7 @@ def main() -> None:
         print_total_token_usage(total_usage, total_api_calls, total_unreported_calls)
         return
 
-    overview_path = scene_output_root / "scenarios_overview.png"
+    overview_path = run_output_root / "scenarios_overview.png"
     create_overview(preview_paths, overview_path)
     print(f"WROTE OVERVIEW {overview_path}", flush=True)
     print(f"Summary: requested={args.count}, generated={generated}, existing={existing}")

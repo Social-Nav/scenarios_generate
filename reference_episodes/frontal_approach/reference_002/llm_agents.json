@@ -1,0 +1,45 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "shopper",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "shop"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "shop"
+      },
+      "spawn_waypoint": "wp_r00_shop_056",
+      "waypoints": [
+        "wp_r00_shop_055",
+        "wp_r00_shop_054",
+        "wp_r00_shop_037",
+        "wp_r00_shop_042",
+        "wp_r00_shop_028",
+        "wp_r00_shop_022"
+      ],
+      "desired_velocity": 1.0,
+      "behavior_mode": "passive",
+      "behavior": "Leave the shelf aisle for the open shopping area, stopping to watch the approaching robot and let it pass."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 0,
+      "label": "shop"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "shop"
+    },
+    "start_waypoint": "wp_r00_shop_055",
+    "goal_waypoint": "wp_r00_shop_059",
+    "social_attributes": "neutral",
+    "social_yielding": true,
+    "behavior": "Travel down the shelf aisle toward the next shelf section, actively slowing or stopping to yield to the oncoming shopper."
+  }
+}

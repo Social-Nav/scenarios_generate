@@ -1,0 +1,31 @@
+{
+  "episode_id": "reference_007",
+  "interaction_type": "manual_reference",
+  "description": "Manually clicked reference episode.",
+  "agents": [
+    {
+      "name": "hunav_1",
+      "behavior_mode": "neutral",
+      "spawn_waypoint": "wp_r00_shop_auto_261",
+      "waypoints": [
+        "wp_r00_shop_160",
+        "wp_r00_shop_auto_331",
+        "wp_r00_shop_158",
+        "wp_r00_shop_156",
+        "wp_r00_shop_auto_170",
+        "wp_r00_shop_auto_475",
+        "wp_r00_shop_204"
+      ]
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "start_waypoint": "wp_r00_shop_auto_200",
+    "goal_waypoint": "wp_r00_shop_195",
+    "waypoints": [
+      "wp_r00_shop_195"
+    ],
+    "social_attributes": "neutral",
+    "social_yielding": false
+  }
+}

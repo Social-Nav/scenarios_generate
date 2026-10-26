@@ -12,7 +12,6 @@ from generate_scenario_from_llm import (
     DEFAULT_BEHAVIOR_TREE,
     DEFAULT_DESIRED_VELOCITY,
     DEFAULT_MODEL,
-    DEFAULT_VELOCITY,
     ScenarioYamlDumper,
     agents_from_data,
     build_scenario,
@@ -59,12 +58,6 @@ def parse_args() -> argparse.Namespace:
             "Occupation category used when an agent does not specify model. "
             f"Default: {DEFAULT_MODEL}."
         ),
-    )
-    parser.add_argument(
-        "--default-velocity",
-        type=float,
-        default=DEFAULT_VELOCITY,
-        help=f"Velocity used when an agent does not specify one. Default: {DEFAULT_VELOCITY}.",
     )
     parser.add_argument(
         "--default-desired-velocity",

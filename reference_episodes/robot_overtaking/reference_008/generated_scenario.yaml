@@ -1,0 +1,22 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: F_Business_02
+  pose: [-1.43371, -2.59136, -84.80557]
+  behavior_tree: BTRegularNav.xml
+  velocity: 1.0
+  desired_velocity: 1.2
+  waypoints:
+  - [-1.37309, -3.25824, -88.09085]
+  - [-1.35288, -3.86448, -84.4278]
+  - [-1.27205, -4.69302, -81.8699]
+  - [-1.21142, -5.1174, -81.8699]
+robot:
+  name: robot
+  pose: [-1.35288, -1.78303, -88.734]
+  waypoints:
+  - [-1.27205, -5.44073, -88.734]
+  behavior: Travel west through the broad central aisle from behind the diner to a
+    point beyond their destination. Maintain a safe following gap and yield until
+    the diner clears the route.

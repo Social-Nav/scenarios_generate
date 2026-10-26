@@ -1,0 +1,62 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.78653, -6.48549, 81.63411]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+    social_force_factor: 10.0
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.66289, -5.64475, 79.69515]
+  - [-0.56398, -5.10074, 80.21759]
+  - [-0.44034, -4.38364, 107.74467]
+  - [-0.63816, -3.76545, 93.17983]
+  - [-0.66289, -3.32035, 70.01689]
+  - [-0.46507, -2.77634, 81.8699]
+  - [-0.39089, -2.25706, 110.85446]
+  - [-0.58871, -1.73778, 110.85446]
+- name: hunav_2
+  model: pedestrian
+  pose: [-0.06943, -0.22939, -99.16235]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+    social_force_factor: 10.0
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [-0.19307, -0.99595, -82.14669]
+  - [-0.09416, -1.71305, -88.2643]
+  - [-0.06943, -2.52906, -97.12502]
+  - [-0.16834, -3.32035, -95.71059]
+  - [-0.21779, -3.8149, -82.69424]
+  - [-0.09416, -4.77928, -82.69424]
+- name: hunav_3
+  model: pedestrian
+  pose: [0.6724, -6.68331, 90.0]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+    social_force_factor: 10.0
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [0.6724, -5.39747, 90.0]
+  - [0.6724, -4.43309, 82.87498]
+  - [0.82077, -3.24617, 105.94539]
+  - [0.6724, -2.72688, 72.89727]
+  - [0.87022, -2.08396, 90.0]
+  - [0.87022, -1.39159, 90.0]
+robot:
+  name: robot
+  pose: [0.15312, -6.51022, 90.0]
+  social_attributes: neutral
+  social_yielding: false
+  waypoints:
+  - [0.15312, 0.24044, 90.0]
+  behavior: Traverse the open waiting aisle on a straight route parallel and close
+    to the pedestrians, using balanced social navigation.

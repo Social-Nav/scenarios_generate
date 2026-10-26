@@ -1,0 +1,29 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-1.04676, -5.00571, -81.8699]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+    social_force_factor: 10.0
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.95534, -5.64563, -96.91123]
+  - [-1.01629, -6.14842, -96.00901]
+  - [-1.04676, -6.43791, 0.0]
+  - [-0.62015, -6.43791, -80.90972]
+  - [-0.5592, -6.81881, -90.0]
+  - [-0.5592, -7.19972, -55.9228]
+  - [-0.20877, -7.71775, -55.9228]
+robot:
+  name: robot
+  pose: [-0.95534, -5.64563, 90.0]
+  social_attributes: neutral
+  social_yielding: true
+  waypoints:
+  - [-0.95534, -4.18295, 90.0]
+  behavior: Leave the office on a simple near-straight route into the corridor, yielding
+    at the doorway to let the entering visitor pass first.

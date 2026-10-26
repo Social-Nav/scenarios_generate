@@ -1,0 +1,40 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "reception visitor",
+      "model": "F_Business_02",
+      "from_region": {
+        "region_id": 4,
+        "label": "corridor"
+      },
+      "to_region": {
+        "region_id": 4,
+        "label": "corridor"
+      },
+      "spawn_waypoint": "wp_r04_corridor_006",
+      "waypoints": [
+        "wp_r04_corridor_005",
+        "wp_r04_corridor_004",
+        "wp_r04_corridor_003"
+      ],
+      "velocity": 1.0,
+      "desired_velocity": 1.2,
+      "behavior": "Walk straight toward the reception end of the corridor, remaining ahead of the robot."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 4,
+      "label": "corridor"
+    },
+    "to_region": {
+      "region_id": 4,
+      "label": "corridor"
+    },
+    "start_waypoint": "wp_r04_corridor_007",
+    "goal_waypoint": "wp_r04_corridor_001",
+    "behavior": "Travel straight toward reception from directly behind the pedestrian, maintaining a safe following distance and yielding before continuing beyond the pedestrian's destination."
+  }
+}

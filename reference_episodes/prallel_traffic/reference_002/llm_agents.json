@@ -1,0 +1,101 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "Visitor approaching east seating",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "spawn_waypoint": "wp_r00_waiting_area_auto_022",
+      "waypoints": [
+        "wp_r00_waiting_area_auto_028",
+        "wp_r00_waiting_area_auto_061",
+        "wp_r00_waiting_area_016",
+        "wp_r00_waiting_area_036",
+        "wp_r00_waiting_area_auto_027",
+        "wp_r00_waiting_area_015",
+        "wp_r00_waiting_area_014",
+        "wp_r00_waiting_area_013"
+      ],
+      "velocity": 0.8,
+      "desired_velocity": 1.0,
+      "behavior_mode": "neutral",
+      "behavior": "Walk east toward the seating frontage along a nearly straight lane, using ordinary social avoidance."
+    },
+    {
+      "name": "hunav_2",
+      "role": "Visitor returning to west seating",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "spawn_waypoint": "wp_r00_waiting_area_009",
+      "waypoints": [
+        "wp_r00_waiting_area_008",
+        "wp_r00_waiting_area_035",
+        "wp_r00_waiting_area_auto_016",
+        "wp_r00_waiting_area_007",
+        "wp_r00_waiting_area_auto_021",
+        "wp_r00_waiting_area_auto_009",
+        "wp_r00_waiting_area_auto_074"
+      ],
+      "velocity": 0.9,
+      "desired_velocity": 1.1,
+      "behavior_mode": "neutral",
+      "behavior": "Walk west along an adjacent parallel lane, passing the robot in the opposite direction."
+    },
+    {
+      "name": "hunav_3",
+      "role": "Visitor joining an east-side companion",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "spawn_waypoint": "wp_r00_waiting_area_030",
+      "waypoints": [
+        "wp_r00_waiting_area_031",
+        "wp_r00_waiting_area_auto_024",
+        "wp_r00_waiting_area_032",
+        "wp_r00_waiting_area_auto_008",
+        "wp_r00_waiting_area_033",
+        "wp_r00_waiting_area_034"
+      ],
+      "velocity": 0.75,
+      "desired_velocity": 0.95,
+      "behavior_mode": "neutral",
+      "behavior": "Walk east to meet a companion along the open lower aisle, parallel to nearby traffic."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 0,
+      "label": "waiting_area"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "waiting_area"
+    },
+    "start_waypoint": "wp_r00_waiting_area_042",
+    "goal_waypoint": "wp_r00_waiting_area_auto_032",
+    "social_attributes": "neutral",
+    "social_yielding": false,
+    "behavior": "Travel east through the open waiting aisle toward an assistance position, following a straight lane close and parallel to pedestrian traffic."
+  }
+}

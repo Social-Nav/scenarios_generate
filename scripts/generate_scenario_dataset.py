@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from generate_scenario_from_llm import TokenUsage, combine_token_usage, format_token_usage
+from scene_names import canonical_scene_id, resolve_scene_dir
 
 
 @dataclass(frozen=True)
@@ -25,36 +26,36 @@ class SceneSpec:
 # Fixed 10k allocation based on the current dense waypoint set.
 # Small: 1-5 agents; medium: 1-8 agents; large: 1-10 agents.
 SCENE_SPECS = (
-    SceneSpec("MV4AFHQKTKJZ2AABAAAAADQ8_usd", "medium", 181, 320, 1, 8),
-    SceneSpec("MV4AFHQKTKJZ2AABAAAAADY8_usd", "medium", 274, 348, 1, 8),
-    SceneSpec("MV4AFHQKTKJZ2AABAAAAAEA8_usd", "medium", 261, 345, 1, 8),
-    SceneSpec("MV4AFHQKTKJZ2AABAAAAAEI8_usd", "medium", 172, 317, 1, 8),
-    SceneSpec("MV5M25QKTKJZ2AABAAAAAAA8_usd", "medium", 240, 339, 1, 8),
-    SceneSpec("MV5M25QKTKJZ2AABAAAAAAI8_usd", "medium", 208, 329, 1, 8),
-    SceneSpec("MV5M25QKTKJZ2AABAAAAAAQ8_usd", "medium", 233, 337, 1, 8),
-    SceneSpec("MV5M25QKTKJZ2AABAAAAAAY8_usd", "medium", 208, 329, 1, 8),
-    SceneSpec("MV5M25QKTKJZ2AABAAAAAEI8_usd", "medium", 177, 319, 1, 8),
-    SceneSpec("MV7J6NIKTKJZ2AABAAAAAAA8_usd", "medium", 191, 324, 1, 8),
-    SceneSpec("MV7J6NIKTKJZ2AABAAAAAAI8_usd", "medium", 177, 319, 1, 8),
-    SceneSpec("MVJWVGYKTLDAYAABAAAAAAQ8_usd", "small", 142, 307, 1, 5),
-    SceneSpec("MVSGSAIKTKJ66AABAAAAADY8_usd", "small", 97, 288, 1, 5),
-    SceneSpec("MVSGSAIKTKJ66AABAAAAAEA8_usd", "small", 159, 313, 1, 5),
-    SceneSpec("MVSYCXYKTKJ66AABAAAAAAA8_usd", "small", 100, 289, 1, 5),
-    SceneSpec("MVSYCXYKTKJ66AABAAAAACY8_usd", "medium", 192, 324, 1, 8),
-    SceneSpec("MVSYCXYKTKJ66AABAAAAADA8_usd", "small", 86, 283, 1, 5),
-    SceneSpec("MVSYCXYKTKJ66AABAAAAADI8_usd", "small", 156, 312, 1, 5),
-    SceneSpec("MWF4WLIKTIFZIAABAAAAABY8_usd", "large", 694, 436, 1, 10),
-    SceneSpec("MWF4WLIKTIFZIAABAAAAACA8_usd", "large", 468, 394, 1, 10),
-    SceneSpec("MWF4WLIKTIFZIAABAAAAACI8_usd", "medium", 192, 324, 1, 8),
-    SceneSpec("MWF4WLIKTIFZIAABAAAAACQ8_usd", "small", 167, 316, 1, 5),
-    SceneSpec("MWF4WLIKTIFZIAABAAAAACY8_usd", "large", 760, 447, 1, 10),
-    SceneSpec("MWF4WLIKTIFZIAABAAAAADA8_usd", "large", 520, 404, 1, 10),
-    SceneSpec("MWF4WLIKTIFZIAABAAAAADI8_usd", "medium", 219, 332, 1, 8),
-    SceneSpec("MWF4WLIKTIFZIAABAAAAADQ8_usd", "small", 94, 287, 1, 5),
-    SceneSpec("MWF4WLIKTIFZIAABAAAAADY8_usd", "medium", 347, 367, 1, 8),
-    SceneSpec("MWF4WLIKTIFZIAABAAAAAEA8_usd", "large", 455, 391, 1, 10),
-    SceneSpec("MWF4WLIKTIFZIAABAAAAAEI8_usd", "small", 83, 282, 1, 5),
-    SceneSpec("MWHLEPQKTIFZIAABAAAAAAA8_usd", "small", 75, 278, 1, 5),
+    SceneSpec("grscenes_1", "medium", 181, 320, 1, 8),
+    SceneSpec("grscenes_2", "medium", 274, 348, 1, 8),
+    SceneSpec("grscenes_3", "medium", 261, 345, 1, 8),
+    SceneSpec("grscenes_4", "medium", 172, 317, 1, 8),
+    SceneSpec("grscenes_5", "medium", 240, 339, 1, 8),
+    SceneSpec("grscenes_6", "medium", 208, 329, 1, 8),
+    SceneSpec("grscenes_7", "medium", 233, 337, 1, 8),
+    SceneSpec("grscenes_8", "medium", 208, 329, 1, 8),
+    SceneSpec("grscenes_9", "medium", 177, 319, 1, 8),
+    SceneSpec("grscenes_10", "medium", 191, 324, 1, 8),
+    SceneSpec("grscenes_11", "medium", 177, 319, 1, 8),
+    SceneSpec("grscenes_12", "small", 142, 307, 1, 5),
+    SceneSpec("grscenes_13", "small", 97, 288, 1, 5),
+    SceneSpec("grscenes_14", "small", 159, 313, 1, 5),
+    SceneSpec("grscenes_15", "small", 100, 289, 1, 5),
+    SceneSpec("grscenes_16", "medium", 192, 324, 1, 8),
+    SceneSpec("grscenes_17", "small", 86, 283, 1, 5),
+    SceneSpec("grscenes_18", "small", 156, 312, 1, 5),
+    SceneSpec("grscenes_19", "large", 694, 436, 1, 10),
+    SceneSpec("grscenes_20", "large", 468, 394, 1, 10),
+    SceneSpec("grscenes_21", "medium", 192, 324, 1, 8),
+    SceneSpec("grscenes_22", "small", 167, 316, 1, 5),
+    SceneSpec("grscenes_23", "large", 760, 447, 1, 10),
+    SceneSpec("grscenes_24", "large", 520, 404, 1, 10),
+    SceneSpec("grscenes_25", "medium", 219, 332, 1, 8),
+    SceneSpec("grscenes_26", "small", 94, 287, 1, 5),
+    SceneSpec("grscenes_27", "medium", 347, 367, 1, 8),
+    SceneSpec("grscenes_28", "large", 455, 391, 1, 10),
+    SceneSpec("grscenes_29", "small", 83, 282, 1, 5),
+    SceneSpec("grscenes_30", "small", 75, 278, 1, 5),
 )
 
 EXPECTED_TOTAL = 10_000
@@ -143,7 +144,7 @@ def main() -> None:
 
     specs = list(SCENE_SPECS)
     if args.only_scene:
-        requested = set(args.only_scene)
+        requested = {canonical_scene_id(value) for value in args.only_scene}
         known = {spec.scene_id for spec in SCENE_SPECS}
         unknown = sorted(requested - known)
         if unknown:
@@ -171,7 +172,7 @@ def main() -> None:
 
     fixed_scene_indexes = {spec.scene_id: index for index, spec in enumerate(SCENE_SPECS)}
     for spec in specs:
-        scene_dir = scenes_root / spec.scene_id
+        scene_dir = resolve_scene_dir(scenes_root / spec.scene_id)
         if not scene_dir.is_dir():
             raise FileNotFoundError(f"fixed scene directory not found: {scene_dir}")
 

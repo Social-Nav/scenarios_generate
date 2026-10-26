@@ -1,0 +1,26 @@
+# Manually clicked topdown scenario
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-2.29791, -5.16853, -104.67639]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+    social_force_factor: 10.0
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-2.5406, -6.09516, -173.08877]
+  - [-3.26867, -6.18341, -165.52971]
+  - [-3.95261, -6.35991, 166.75948]
+  - [-4.32768, -6.27166, -180.0]
+  - [-5.497, -6.27166, -180.0]
+robot:
+  name: robot
+  pose: [-1.52571, -6.13928, -174.80557]
+  social_attributes: neutral
+  social_yielding: false
+  waypoints:
+  - [-3.95261, -6.35991, -174.80557]
+  behavior: manually clicked robot route

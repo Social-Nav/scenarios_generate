@@ -23,3 +23,8 @@ test_outputs*/
 previews/
 backups/
 *.rar
+
+# Local examples and tests (keep on disk, do not publish)
+yaml_example/
+test/
+tests/

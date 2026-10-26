@@ -1,0 +1,46 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "Visitor entering office",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 2,
+        "label": "corridor"
+      },
+      "to_region": {
+        "region_id": 3,
+        "label": "office"
+      },
+      "spawn_waypoint": "wp_r02_corridor_038",
+      "waypoints": [
+        "wp_r03_office_001",
+        "wp_r03_office_auto_001",
+        "wp_r03_office_003",
+        "wp_r03_office_005",
+        "wp_r03_office_007",
+        "wp_r03_office_008"
+      ],
+      "velocity": 0.8,
+      "desired_velocity": 1.0,
+      "behavior_mode": "neutral",
+      "behavior": "Enter the office through the doorway and walk toward the visitor area, encountering the departing robot head-on."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 3,
+      "label": "office"
+    },
+    "to_region": {
+      "region_id": 2,
+      "label": "corridor"
+    },
+    "start_waypoint": "wp_r03_office_auto_001",
+    "goal_waypoint": "wp_r02_corridor_auto_020",
+    "social_attributes": "neutral",
+    "social_yielding": true,
+    "behavior": "Leave the office on a short, nearly straight route through the doorway, slowing or stopping to let the entering pedestrian pass first."
+  }
+}

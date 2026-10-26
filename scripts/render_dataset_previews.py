@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scene_names import canonical_scene_id, resolve_scene_dir, scene_sort_key
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -40,8 +42,11 @@ def main() -> None:
     if not output_root.is_dir():
         raise FileNotFoundError(f"output root not found: {output_root}")
 
-    requested = set(args.only_scene or [])
-    scene_output_dirs = sorted(path for path in output_root.iterdir() if path.is_dir())
+    requested = {canonical_scene_id(value) for value in (args.only_scene or [])}
+    scene_output_dirs = sorted(
+        (path for path in output_root.iterdir() if path.is_dir()),
+        key=lambda path: scene_sort_key(path.name),
+    )
     if requested:
         available = {path.name for path in scene_output_dirs}
         unknown = sorted(requested - available)
@@ -59,7 +64,7 @@ def main() -> None:
     missing_yaml = 0
 
     for scene_output_dir in scene_output_dirs:
-        scene_dir = scenes_root / scene_output_dir.name
+        scene_dir = resolve_scene_dir(scenes_root / scene_output_dir.name)
         mapping_path = scene_dir / "topdown_mapping.json"
         if not mapping_path.is_file():
             raise FileNotFoundError(

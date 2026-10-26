@@ -13,7 +13,6 @@ from generate_scenario_from_llm import (
     DEFAULT_BEHAVIOR_TREE,
     DEFAULT_DESIRED_VELOCITY,
     DEFAULT_MODEL,
-    DEFAULT_VELOCITY,
     TOKEN_USAGE_PREFIX,
     ScenarioYamlDumper,
     agents_from_data,
@@ -23,9 +22,11 @@ from generate_scenario_from_llm import (
     build_waypoint_lookup,
     call_llm_with_usage,
     load_mapping,
+    load_reference_episodes_from_sources,
     load_waypoint_context,
-    load_yaml_file,
+    load_llm_config,
     robot_from_data,
+    validate_llm_social_fields,
 )
 
 
@@ -37,6 +38,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--llm-config", required=True)
     parser.add_argument("--prompt", required=True)
+    parser.add_argument("--reference-dir", action="append")
+    parser.add_argument("--reference-scene-root")
+    parser.add_argument(
+        "--include-reference-episodes",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--robot-intermediate-waypoints",
+        action="store_true",
+        help="Require and preserve a multi-waypoint robot route.",
+    )
+    parser.add_argument(
+        "--robot-tolerances",
+        action="store_true",
+        help="Write waypoint_tolerance and final_goal_tolerance to each robot YAML entry.",
+    )
+    parser.add_argument(
+        "--human-social-force-factor",
+        type=float,
+        help="Optional social_force_factor written to every human YAML entry.",
+    )
     parser.add_argument(
         "--batch-items",
         required=True,
@@ -88,7 +111,7 @@ def main() -> None:
     items = parse_batch_items(args.batch_items)
     scene_dir = Path(args.scene_dir).expanduser().resolve()
     output_root = Path(args.output_root).expanduser().resolve()
-    llm_config = load_yaml_file(Path(args.llm_config).expanduser().resolve())
+    llm_config = load_llm_config(Path(args.llm_config).expanduser().resolve())
     mapping = load_mapping(scene_dir / "topdown_mapping.json")
     waypoint_context = load_waypoint_context(scene_dir)
     waypoint_lookup = build_waypoint_lookup(waypoint_context)
@@ -98,13 +121,30 @@ def main() -> None:
         if scene_prompt_path.is_file()
         else ""
     )
+    reference_episodes: list[dict[str, Any]] = []
+    if args.include_reference_episodes:
+        reference_dirs = [
+            Path(path).expanduser().resolve() for path in (args.reference_dir or [])
+        ]
+        reference_scene_root = (
+            Path(args.reference_scene_root).expanduser().resolve()
+            if args.reference_scene_root
+            else scene_dir.parent
+        )
+        reference_episodes = load_reference_episodes_from_sources(
+            reference_dirs, reference_scene_root
+        )
+
     prompt = build_llm_prompt(
         scene_dir,
         mapping,
         scene_prompt,
         args.prompt,
-        False,
-        [item["agent_count"] for item in items],
+        reference_episodes=reference_episodes,
+        robot_intermediate_waypoints=args.robot_intermediate_waypoints,
+        robot_tolerances=args.robot_tolerances,
+        batch_agent_counts=[item["agent_count"] for item in items],
+        include_reference_episodes=args.include_reference_episodes,
     )
     image_paths = [scene_dir / "overlay.png", scene_dir / "navmesh_mask.png"]
     for image_path in image_paths:
@@ -121,14 +161,15 @@ def main() -> None:
     conversion_args = SimpleNamespace(
         default_model=DEFAULT_MODEL,
         default_behavior_tree=DEFAULT_BEHAVIOR_TREE,
-        default_velocity=DEFAULT_VELOCITY,
         default_desired_velocity=DEFAULT_DESIRED_VELOCITY,
         round=args.round,
-        robot_intermediate_waypoints=False,
+        robot_intermediate_waypoints=args.robot_intermediate_waypoints,
+        human_social_force_factor=args.human_social_force_factor,
     )
 
     prepared: list[tuple[dict[str, Any], dict[str, Any], Path]] = []
     for item, llm_scenario in zip(items, batch_scenarios):
+        validate_llm_social_fields(llm_scenario)
         agents = agents_from_data(llm_scenario)
         expected_agents = item["agent_count"]
         if len(agents) != expected_agents:
@@ -153,7 +194,8 @@ def main() -> None:
             conversion_args,
             waypoint_lookup,
             waypoint_context,
-            False,
+            args.robot_intermediate_waypoints,
+            args.robot_tolerances,
         )
         variant_dir = output_root / f"scenario_{item['variant_number']:03d}"
         prepared.append((llm_scenario, scenario, variant_dir))
@@ -165,7 +207,7 @@ def main() -> None:
             json.dumps(llm_scenario, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        (variant_dir / "generated_scenario.yaml").write_text(
+        (variant_dir / "scenario.yaml").write_text(
             "# Generated from topdown pixel waypoints\n\n"
             + yaml.dump(
                 scenario,

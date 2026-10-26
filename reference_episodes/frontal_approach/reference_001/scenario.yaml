@@ -1,0 +1,31 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [0.14681, -4.18463, -180.0]
+  behavior_tree: BTSurprisedNav.xml
+  behavior:
+    type: 3
+    dist: 0.8
+    duration: 1.0
+    once: false
+    vel: 0.0
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.7872, -4.18463, -180.0]
+  - [-1.59667, -4.18463, -171.8699]
+  - [-2.17783, -4.26765, 176.98721]
+  - [-2.57219, -4.2469, 157.47944]
+  - [-3.42317, -3.89405, -167.27564]
+  - [-4.06659, -4.03934, -167.27564]
+robot:
+  name: robot
+  pose: [-0.7872, -4.18463, 0.61277]
+  social_attributes: neutral
+  social_yielding: true
+  waypoints:
+  - [3.09411, -4.14312, 0.61277]
+  behavior: Travel down the shelf aisle toward the lower merchandise section, meeting
+    the nearby shopper head-on. Slow or stop to yield when the shopper occupies the
+    shared passage.

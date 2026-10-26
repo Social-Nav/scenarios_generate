@@ -1,0 +1,21 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [-6.43045, 3.88597, 90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 1.1
+  desired_velocity: 1.3
+  waypoints:
+  - [-6.43045, 4.70098, 90.0]
+  - [-6.43045, 5.77585, 90.0]
+  - [-6.43045, 6.7208, 90.0]
+robot:
+  name: robot
+  pose: [-6.43045, 2.16145, 90.0]
+  waypoints:
+  - [-6.43045, 7.524, 90.0]
+  behavior: Travel straight in the pedestrian's direction from directly behind, maintaining
+    a safe following distance and yielding before continuing beyond the pedestrian's
+    destination.

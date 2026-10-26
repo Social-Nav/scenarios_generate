@@ -1,0 +1,47 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "Visitor walking along the waiting aisle",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "waiting_area"
+      },
+      "spawn_waypoint": "wp_r00_waiting_area_auto_036",
+      "waypoints": [
+        "wp_r00_waiting_area_auto_063",
+        "wp_r00_waiting_area_006",
+        "wp_r00_waiting_area_005"
+      ],
+      "velocity": 1.0,
+      "desired_velocity": 1.0,
+      "behavior_mode": "neutral",
+      "behavior": "Start facing along the aisle toward the first waypoint and walk nearly straight toward the opposite waiting seats, ahead of the following robot."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 0,
+      "label": "waiting_area"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "waiting_area"
+    },
+    "start_waypoint": "wp_r00_waiting_area_auto_032",
+    "waypoints": [
+      "wp_r00_waiting_area_auto_036",
+      "wp_r00_waiting_area_auto_063",
+      "wp_r00_waiting_area_006"
+    ],
+    "social_attributes": "aggressive",
+    "social_yielding": false,
+    "behavior": "Start approximately 1.5 meters behind the pedestrian and follow the same aisle trajectory in the same direction, ending at the pedestrian's penultimate waypoint without overtaking."
+  }
+}

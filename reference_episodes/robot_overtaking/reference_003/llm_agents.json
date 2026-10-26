@@ -1,0 +1,41 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "Visitor heading toward reception",
+      "model": "female_adult_business_02",
+      "from_region": {
+        "region_id": 4,
+        "label": "corridor"
+      },
+      "to_region": {
+        "region_id": 4,
+        "label": "corridor"
+      },
+      "spawn_waypoint": "wp_r04_corridor_006",
+      "waypoints": [
+        "wp_r04_corridor_005",
+        "wp_r04_corridor_004",
+        "wp_r04_corridor_003",
+        "wp_r04_corridor_002"
+      ],
+      "velocity": 1.1,
+      "desired_velocity": 1.2,
+      "behavior": "Walk west along the broad corridor toward reception, maintaining a nearly straight course ahead of the robot."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 4,
+      "label": "corridor"
+    },
+    "to_region": {
+      "region_id": 4,
+      "label": "corridor"
+    },
+    "start_waypoint": "wp_r04_corridor_007",
+    "goal_waypoint": "wp_r04_corridor_001",
+    "behavior": "Travel straight west from directly behind the pedestrian toward a goal beyond theirs; maintain a safe following gap and yield until the path ahead is clear."
+  }
+}

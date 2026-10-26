@@ -1,0 +1,46 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "Office visitor",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 2,
+        "label": "corridor"
+      },
+      "to_region": {
+        "region_id": 6,
+        "label": "office"
+      },
+      "spawn_waypoint": "wp_r02_corridor_002",
+      "waypoints": [
+        "wp_r06_office_007",
+        "wp_r06_office_006",
+        "wp_r06_office_005",
+        "wp_r06_office_004",
+        "wp_r06_office_002",
+        "wp_r06_office_003"
+      ],
+      "velocity": 0.8,
+      "desired_velocity": 1.0,
+      "behavior_mode": "neutral",
+      "behavior": "Enters the office from just outside its doorway and approaches the desk, meeting the outgoing robot at the entrance."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 6,
+      "label": "office"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "waiting_area"
+    },
+    "start_waypoint": "wp_r06_office_007",
+    "goal_waypoint": "wp_r00_waiting_area_026",
+    "social_attributes": "neutral",
+    "social_yielding": true,
+    "behavior": "Leaves from just inside the office doorway on a short, nearly straight route across the corridor to the waiting area, yielding at the doorway to let the entering visitor pass."
+  }
+}

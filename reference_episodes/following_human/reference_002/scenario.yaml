@@ -1,0 +1,27 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.09416, -1.71305, -88.2643]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+  velocity: 1.0
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.06943, -2.52906, -90.6296]
+  - [-0.09416, -4.77928, -90.0]
+  - [-0.09416, -6.98004, -90.0]
+robot:
+  name: robot
+  pose: [-0.06943, -0.22939, -90.95484]
+  social_attributes: aggressive
+  social_yielding: false
+  waypoints:
+  - [-0.09416, -1.71305, -88.2643]
+  - [-0.06943, -2.52906, -90.6296]
+  - [-0.09416, -4.77928, -90.6296]
+  behavior: Start approximately 1.5 meters behind the pedestrian and follow the same
+    aisle trajectory in the same direction, ending at the pedestrian's penultimate
+    waypoint without overtaking.

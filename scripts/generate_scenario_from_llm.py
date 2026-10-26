@@ -15,11 +15,43 @@ import numpy as np
 import requests
 import yaml
 
+from scene_names import canonical_scene_id, resolve_scene_dir
+
 
 DEFAULT_BEHAVIOR_TREE = "BTRegularNav.xml"
 DEFAULT_MODEL = "pedestrian"
-DEFAULT_VELOCITY = 0.8
 DEFAULT_DESIRED_VELOCITY = 1.0
+FOLLOWING_HUMAN_SOCIAL_FORCE_FACTOR = 10.0
+ROBOT_INTERMEDIATE_WAYPOINTS_PHRASE = "机器人路径由多个waypoints构成"
+ROBOT_TOLERANCE_FIELDS = ("waypoint_tolerance", "final_goal_tolerance")
+ROBOT_WAYPOINT_TOLERANCE = 0.50
+ROBOT_FINAL_GOAL_TOLERANCE = 0.25
+ROBOT_SOCIAL_ATTRIBUTES = ("passive", "neutral", "aggressive")
+HUMAN_BEHAVIOR_PROFILES: dict[str, dict[str, Any]] = {
+    "neutral": {
+        "type": 1,
+        "behavior_tree": "BTRegularNav.xml",
+        "behavior": {"type": 1},
+    },
+    "passive": {
+        "type": 3,
+        "behavior_tree": "BTSurprisedNav.xml",
+        "behavior": {
+            "type": 3,
+            "dist": 0.8,
+            "duration": 1.0,
+            "once": False,
+            "vel": 0.0,
+            "obstacle_force_factor": 2.0,
+            "social_force_factor": 10.0,
+        },
+        "desired_velocity": 0.8,
+    },
+}
+HUMAN_BEHAVIOR_ALIASES = {
+    "regular": "neutral",
+    "surprised": "passive",
+}
 AVAILABLE_AGENT_MODELS = (
     "pedestrian",
     "doctor",
@@ -149,6 +181,28 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--reference-dir",
+        action="append",
+        help=(
+            "Interaction reference set directory. Each episode may declare source_scene_id in "
+            "metadata.yaml. Repeat to include multiple sets. Defaults to the legacy "
+            "reference_episodes/<target-scene-id> layout."
+        ),
+    )
+    parser.add_argument(
+        "--reference-scene-root",
+        help=(
+            "Directory containing prepared source scenes used to resolve reference waypoint "
+            "coordinates. Defaults to the target scene's parent directory."
+        ),
+    )
+    parser.add_argument(
+        "--include-reference-episodes",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include reference episodes in the LLM prompt. Default: enabled.",
+    )
+    parser.add_argument(
         "--save-llm-output",
         help="Optional path to save the raw parsed LLM JSON response before world-coordinate conversion.",
     )
@@ -166,6 +220,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--robot-tolerances",
+        action="store_true",
+        help="Write waypoint_tolerance and final_goal_tolerance to the robot YAML entry.",
+    )
+    parser.add_argument(
+        "--human-social-force-factor",
+        type=float,
+        help="Optional social_force_factor written to every human YAML entry.",
+    )
+    parser.add_argument(
         "--round",
         type=int,
         default=5,
@@ -179,12 +243,6 @@ def parse_args() -> argparse.Namespace:
             "Occupation category used when an agent does not specify model. "
             f"Default: {DEFAULT_MODEL}."
         ),
-    )
-    parser.add_argument(
-        "--default-velocity",
-        type=float,
-        default=DEFAULT_VELOCITY,
-        help=f"Velocity used when an agent does not specify one. Default: {DEFAULT_VELOCITY}.",
     )
     parser.add_argument(
         "--default-desired-velocity",
@@ -210,12 +268,35 @@ def load_yaml_file(path: Path) -> dict[str, Any]:
     return data
 
 
+def load_llm_config(path: Path) -> dict[str, Any]:
+    config = load_yaml_file(path)
+    config["_config_dir"] = str(path.parent)
+    return config
+
+
 def config_value(config: dict[str, Any], key: str, *, required: bool = True) -> str:
     value = config.get(key)
+    file_value = config.get(f"{key}_file")
+    if not value and file_value:
+        value_path = Path(str(file_value)).expanduser()
+        if not value_path.is_absolute():
+            config_dir = Path(str(config.get("_config_dir") or Path.cwd()))
+            value_path = config_dir / value_path
+        if not value_path.is_file():
+            raise ValueError(f"LLM config {key}_file not found: {value_path}")
+        if value_path.suffix.lower() in {".yaml", ".yml"}:
+            value = load_yaml_file(value_path).get(key)
+        else:
+            value = value_path.read_text(encoding="utf-8").strip()
     env_key = config.get(f"{key}_env")
     if not value and env_key:
         value = os.environ.get(str(env_key))
     if required and not value:
+        if file_value:
+            raise ValueError(
+                f"LLM config is missing {key}; set {key} in {value_path}"
+                + (f" or env {env_key}" if env_key else "")
+            )
         if env_key:
             raise ValueError(f"LLM config is missing {key}; env {env_key} is not set")
         raise ValueError(f"LLM config is missing {key}")
@@ -326,6 +407,17 @@ def build_waypoint_lookup(waypoint_context: dict[str, Any]) -> dict[str, tuple[f
     return lookup
 
 
+def robot_intermediate_waypoints_requested(prompt: str) -> bool:
+    """Return whether the user explicitly requests a multi-waypoint robot route."""
+    normalized = "".join(prompt.split()).lower()
+    return ROBOT_INTERMEDIATE_WAYPOINTS_PHRASE in normalized
+
+
+def robot_tolerances_requested(prompt: str) -> bool:
+    normalized = "".join(prompt.split()).lower()
+    return all(field in normalized for field in ROBOT_TOLERANCE_FIELDS)
+
+
 def build_waypoint_region_lookup(waypoint_context: dict[str, Any]) -> dict[str, tuple[int | None, str]]:
     lookup: dict[str, tuple[int | None, str]] = {}
     for region in waypoint_context.get("waypoints_by_region", []):
@@ -389,17 +481,278 @@ def read_scene_prompt(scene_dir: Path, args: argparse.Namespace) -> str:
     return path.read_text(encoding="utf-8").strip()
 
 
+def reference_waypoint_ids(value: Any, field_name: str) -> list[str]:
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{field_name} must be a non-empty waypoint id array")
+    ids: list[str] = []
+    for index, item in enumerate(value):
+        if isinstance(item, str):
+            ids.append(item)
+        elif isinstance(item, dict) and isinstance(item.get("id"), str):
+            ids.append(item["id"])
+        else:
+            raise ValueError(f"{field_name}[{index}] must be a waypoint id or object with id")
+    return ids
+
+
+def enrich_reference_route(
+    route: dict[str, Any],
+    waypoint_lookup: dict[str, tuple[float, float]],
+    field_name: str,
+) -> dict[str, Any]:
+    enriched = dict(route)
+    for key in ("spawn_waypoint", "start_waypoint", "goal_waypoint"):
+        value = enriched.get(key)
+        if isinstance(value, str):
+            if value not in waypoint_lookup:
+                raise ValueError(f"{field_name}.{key} references unknown waypoint: {value}")
+            enriched[key] = {"id": value, "pixel": list(waypoint_lookup[value])}
+
+    if "waypoints" in enriched:
+        ids = reference_waypoint_ids(enriched["waypoints"], f"{field_name}.waypoints")
+        enriched["waypoints"] = [
+            {"id": waypoint_id, "pixel": list(waypoint_lookup[waypoint_id])}
+            for waypoint_id in ids
+        ]
+    return enriched
+
+
+def reference_route_objects(episode: dict[str, Any]) -> list[dict[str, Any]]:
+    routes: list[dict[str, Any]] = []
+    for role in ("pedestrian", "robot"):
+        route = episode.get(role)
+        if isinstance(route, dict):
+            routes.append(route)
+    agents = episode.get("agents")
+    if isinstance(agents, list):
+        routes.extend(agent for agent in agents if isinstance(agent, dict))
+    return routes
+
+
+def add_portable_reference_geometry(
+    episode: dict[str, Any],
+    source_scene_id: str,
+    image_size: tuple[int, int],
+) -> None:
+    points: list[dict[str, Any]] = []
+    for route in reference_route_objects(episode):
+        for key in ("spawn_waypoint", "start_waypoint", "goal_waypoint"):
+            point = route.get(key)
+            if isinstance(point, dict) and isinstance(point.get("pixel"), list):
+                points.append(point)
+        waypoints = route.get("waypoints")
+        if isinstance(waypoints, list):
+            points.extend(
+                point
+                for point in waypoints
+                if isinstance(point, dict) and isinstance(point.get("pixel"), list)
+            )
+
+    if not points:
+        return
+    xs = [float(point["pixel"][0]) for point in points]
+    ys = [float(point["pixel"][1]) for point in points]
+    center_x = (min(xs) + max(xs)) / 2.0
+    center_y = (min(ys) + max(ys)) / 2.0
+    scale = max(max(xs) - min(xs), max(ys) - min(ys), 1.0)
+    for point, x, y in zip(points, xs, ys):
+        point["interaction_relative"] = [
+            round((x - center_x) / scale, 6),
+            round((y - center_y) / scale, 6),
+        ]
+
+    episode["geometry_frame"] = {
+        "source_scene_id": source_scene_id,
+        "source_image_size": [image_size[0], image_size[1]],
+        "pixel_axes": "x_right_y_down",
+        "interaction_relative_origin_pixel": [round(center_x, 6), round(center_y, 6)],
+        "interaction_relative_scale_pixel": round(scale, 6),
+        "interaction_relative_description": (
+            "Translation- and uniform-scale-invariant coordinates shared by all human and robot "
+            "path points in this episode; angles, directions, intersections, and relative order "
+            "are preserved."
+        ),
+    }
+
+
+def load_reference_episodes(
+    reference_dir: Path | None,
+    waypoint_lookup: dict[str, tuple[float, float]],
+    source_scene_id: str | None = None,
+    image_size: tuple[int, int] | None = None,
+) -> list[dict[str, Any]]:
+    if reference_dir is None or not reference_dir.is_dir():
+        return []
+
+    episodes: list[dict[str, Any]] = []
+    sources: list[Path] = []
+    for path in sorted(reference_dir.iterdir()):
+        if path.name.startswith("_"):
+            continue
+        if path.is_dir():
+            for filename in ("reference_episode.json", "llm_agents.json"):
+                candidate = path / filename
+                if candidate.is_file():
+                    sources.append(candidate)
+                    break
+        elif path.suffix.lower() in {".yaml", ".yml", ".json"}:
+            sources.append(path)
+
+    for path in sources:
+        episodes.append(
+            load_reference_episode_file(
+                path,
+                waypoint_lookup,
+                str(path.relative_to(reference_dir)),
+                source_scene_id,
+                image_size,
+            )
+        )
+    return episodes
+
+
+def load_reference_episode_file(
+    path: Path,
+    waypoint_lookup: dict[str, tuple[float, float]],
+    source_file: str,
+    source_scene_id: str | None = None,
+    image_size: tuple[int, int] | None = None,
+) -> dict[str, Any]:
+    raw = (
+        json.loads(path.read_text(encoding="utf-8"))
+        if path.suffix.lower() == ".json"
+        else load_yaml_file(path)
+    )
+    if not isinstance(raw, dict):
+        raise ValueError(f"Reference episode {path} must contain a YAML object")
+    episode = dict(raw)
+    episode["source_file"] = source_file
+    for role in ("pedestrian", "robot"):
+        if role in episode:
+            if not isinstance(episode[role], dict):
+                raise ValueError(f"Reference episode {path}: {role} must be an object")
+            episode[role] = enrich_reference_route(
+                episode[role], waypoint_lookup, f"{path.name}.{role}"
+            )
+    agents = episode.get("agents")
+    if agents is not None:
+        if not isinstance(agents, list) or not agents:
+            raise ValueError(f"Reference episode {path}: agents must be a non-empty array")
+        episode["agents"] = [
+            enrich_reference_route(agent, waypoint_lookup, f"{path.name}.agents[{index}]")
+            for index, agent in enumerate(agents)
+            if isinstance(agent, dict)
+        ]
+        if len(episode["agents"]) != len(agents):
+            raise ValueError(f"Reference episode {path}: every agent must be an object")
+    if source_scene_id is not None and image_size is not None:
+        add_portable_reference_geometry(episode, source_scene_id, image_size)
+    return episode
+
+
+def reference_episode_sources(reference_dir: Path) -> list[Path]:
+    sources: list[Path] = []
+    for path in sorted(reference_dir.iterdir()):
+        if path.name.startswith("_") or path.name == "metadata.yaml":
+            continue
+        if path.is_dir():
+            for filename in ("reference_episode.json", "llm_agents.json"):
+                candidate = path / filename
+                if candidate.is_file():
+                    sources.append(candidate)
+                    break
+        elif path.suffix.lower() in {".yaml", ".yml", ".json"}:
+            sources.append(path)
+    return sources
+
+
+def load_reference_metadata(source: Path, reference_dir: Path) -> dict[str, Any]:
+    metadata_path = source.parent / "metadata.yaml"
+    if source.parent == reference_dir:
+        return {}
+    if not metadata_path.is_file():
+        raise ValueError(
+            f"Reference episode {source.parent} is missing required metadata.yaml"
+        )
+    metadata = load_yaml_file(metadata_path)
+    if not isinstance(metadata, dict):
+        raise ValueError(f"{metadata_path} must contain a YAML object")
+    return metadata
+
+
+def load_reference_episodes_from_sources(
+    reference_dirs: list[Path],
+    reference_scene_root: Path,
+) -> list[dict[str, Any]]:
+    episodes: list[dict[str, Any]] = []
+    scene_cache: dict[str, tuple[dict[str, tuple[float, float]], tuple[int, int]]] = {}
+    for reference_dir in reference_dirs:
+        if not reference_dir.is_dir():
+            continue
+        for source in reference_episode_sources(reference_dir):
+            metadata = load_reference_metadata(source, reference_dir)
+            source_scene_id = metadata.get("source_scene_id", reference_dir.name)
+            if not isinstance(source_scene_id, str) or not source_scene_id:
+                raise ValueError(
+                    f"{source.parent / 'metadata.yaml'} must define a non-empty source_scene_id"
+                )
+            source_scene_id = canonical_scene_id(source_scene_id)
+            if source_scene_id not in scene_cache:
+                source_scene_dir = resolve_scene_dir(reference_scene_root / source_scene_id)
+                source_context = load_waypoint_context(source_scene_dir)
+                source_mapping = load_mapping(source_scene_dir / "topdown_mapping.json")
+                scene_cache[source_scene_id] = (
+                    build_waypoint_lookup(source_context),
+                    (source_mapping.image_width, source_mapping.image_height),
+                )
+            waypoint_lookup, image_size = scene_cache[source_scene_id]
+            episode = load_reference_episode_file(
+                source,
+                waypoint_lookup,
+                str(source.relative_to(reference_dir)),
+                source_scene_id,
+                image_size,
+            )
+            if isinstance(metadata.get("interaction_type"), str):
+                episode["interaction_type"] = metadata["interaction_type"]
+            episode["reference_set"] = reference_dir.name
+            episodes.append(episode)
+    return episodes
+
+
+def format_reference_episodes(episodes: list[dict[str, Any]]) -> str:
+    if not episodes:
+        return "无人工参考 episode。"
+    return json.dumps(episodes, ensure_ascii=False, indent=2)
+
+
 def build_llm_prompt(
     scene_dir: Path,
     mapping: CameraRayMapping,
     scene_prompt: str,
     user_prompt: str,
+    reference_episodes: list[dict[str, Any]] | None = None,
     robot_intermediate_waypoints: bool = False,
+    robot_tolerances: bool = False,
     batch_agent_counts: list[int] | None = None,
+    include_reference_episodes: bool = True,
 ) -> str:
     waypoint_context = load_waypoint_context(scene_dir)
     waypoint_text = json.dumps(waypoint_context, ensure_ascii=False, indent=2)
     agent_models_text = format_agent_models_for_prompt(AVAILABLE_AGENT_MODELS)
+    if include_reference_episodes:
+        reference_rule = (
+            "- 人工参考 episode 只用于学习交互几何、相对方向和行为选择；"
+            "必须将其迁移到当前场景的合法 waypoint，不能照抄参考场景的 waypoint id。\n"
+        )
+        reference_section = (
+            "人工参考 episode：\n"
+            + format_reference_episodes(reference_episodes or [])
+            + "\n\n"
+        )
+    else:
+        reference_rule = ""
+        reference_section = ""
     if robot_intermediate_waypoints:
         robot_waypoint_rule = (
             "- 机器人使用 start_waypoint 作为起点 waypoint id；waypoints 是后续按移动顺序排列的中间点和终点 waypoint id，"
@@ -417,6 +770,8 @@ def build_llm_prompt(
     "to_region": {"region_id": 6, "label": "consultation_room"},
     "start_waypoint": "wp_r00_waiting_area_004",
     "waypoints": ["wp_r00_waiting_area_005", "wp_r00_waiting_area_006", "wp_r00_waiting_area_007"],
+    "social_attributes": "neutral",
+    "social_yielding": false,
     "behavior": "brief robot navigation purpose"
   }"""
     else:
@@ -424,19 +779,27 @@ def build_llm_prompt(
             "- 机器人只需要选择 start_waypoint 和 goal_waypoint，不要输出中途 waypoint，不要输出 robot.waypoints。"
         )
         robot_behavior_rules = """- 机器人路径必须和行人路径一起考虑，不能只单独生成；机器人只需要 start 和 goal 表示大致方向，路线不要太长，不要太复杂。
-- 机器人路径可以简单一点，但 start 和 goal 不要太近，内部规划时应想象机器人至少经过 5 个候选 waypoint 的距离后才能到达 goal；最终 JSON 仍然只输出 start_waypoint 和 goal_waypoint，不要输出中间经过点，不要设计复杂巡逻、长距离穿越或多段任务。
-- 机器人优先在开阔区域、宽走廊和宽通道中移动，尽量选择离墙、家具、柜台、桌椅、障碍物都有一定距离的 waypoint。
-- 机器人半径比行人大，不能把 start_waypoint 或 goal_waypoint 设计在狭窄位置、贴近墙边、贴近障碍物边缘或人流密集的门口。
-- 机器人路线中行人可以稍微出现在机器人视野里，但不要让机器人和行人的路线产生明显碰撞或迎面冲突。
-- 机器人 start 和 goal 应尽量在同一个连通、开阔、可安全通行的区域或宽通道内；除非用户明确要求，不要让机器人跨很多区域、穿很多门或走复杂长路线。"""
+- 机器人路径可以简单一点，但 start 和 goal 不要太近，内部规划时应想象机器人至少经过 2 个候选 waypoint 的距离后才能到达 goal；最终 JSON 仍然只输出 start_waypoint 和 goal_waypoint，不要输出中间经过点，不要设计复杂巡逻、长距离穿越或多段任务。"""
         robot_schema = """"robot": {
     "name": "robot",
     "from_region": {"region_id": 0, "label": "waiting_area"},
     "to_region": {"region_id": 6, "label": "consultation_room"},
     "start_waypoint": "wp_r00_waiting_area_004",
     "goal_waypoint": "wp_r00_waiting_area_005",
+    "social_attributes": "neutral",
+    "social_yielding": false,
     "behavior": "brief robot navigation purpose"
   }"""
+
+    tolerance_schema = ""
+    if robot_tolerances:
+        tolerance_schema = f''',
+    "waypoint_tolerance": {ROBOT_WAYPOINT_TOLERANCE:.2f},
+    "final_goal_tolerance": {ROBOT_FINAL_GOAL_TOLERANCE:.2f}'''
+        robot_schema = robot_schema.replace(
+            '\n    "behavior": "brief robot navigation purpose"',
+            tolerance_schema + '\n    "behavior": "brief robot navigation purpose"',
+        )
 
     scenario_schema = f"""{{
   "agents": [
@@ -448,8 +811,8 @@ def build_llm_prompt(
       "to_region": {{"region_id": 6, "label": "consultation_room"}},
       "spawn_waypoint": "wp_r00_waiting_area_001",
       "waypoints": ["wp_r00_waiting_area_002", "wp_r00_waiting_area_003"],
-      "velocity": 0.8,
       "desired_velocity": 1.0,
+      "behavior_mode": "neutral",
       "behavior": "brief explanation"
     }}
   ],
@@ -488,7 +851,7 @@ def build_llm_prompt(
 - 在同一个 region 内部移动时，要一个一个思考路线的下一个 waypoint，根据当前waypoint选择下一个，按照真实可能路线选择若干 waypoint，保持顺序自然、连贯。
 - 每次选取下一个waypoint时需要去navmesh mask图中对比确定当前waypoint和下一个waypoint之间在navmesh中是连通的，如果不在同一片连通区域，则禁止选取这个waypoint
 - 只能使用下方 waypoints_by_region 中存在的 waypoint id，严禁生成新坐标、新 id、spawn_pixel 或 waypoint_pixels。
-- 行人使用 spawn_waypoint 作为起点 waypoint id；waypoints 是后续按移动顺序排列的 waypoint id，至少 2 个。
+{reference_rule}- 行人使用 spawn_waypoint 作为起点 waypoint id；waypoints 是后续按移动顺序排列的 waypoint id，至少 2 个。
 {robot_waypoint_rule}
 - 通常应避免重复选择同一个 waypoint；但如果路线语义涉及返回、折返、来回移动或原路返回，可以复用已经选过的 waypoint。
 - 路径必须符合真实室内移动逻辑，不能随机选点。
@@ -501,14 +864,22 @@ def build_llm_prompt(
 - 如果没有对应 region_transitions，才根据图像和连接图选择最合理的门两侧 waypoint。
 - 多个行人分别生成独立 agent，命名为 hunav_1、hunav_2、hunav_3等。
 {robot_behavior_rules}
-- 机器人 start_waypoint 与最终目标 waypoint 之间的世界坐标直线距离应至少为 5 米；请选择在俯视图上明显分离的起点和终点，不要选择彼此接近的 waypoint。
+- 机器人 start_waypoint 与最终目标 waypoint 之间的世界坐标直线距离应至少为 2 米；请选择在俯视图上明显分离的起点和终点，不要选择彼此过于接近的 waypoint。
 - 必须输出一个 robot 对象；机器人对象的 name 必须是 "robot"；如果用户没有明确机器人数量，默认只生成 1 条机器人路径。
+- 根据用户 prompt 为每个行人选择 behavior_mode，且只能是 neutral、passive：
+  neutral 表示 regular，沿既定路线行走并对机器人进行常规社交避让；passive 表示 surprised，看到机器人后停下并注视，让机器人先通过。
+- 根据 prompt 中明确描述的行人反应选择模式，而不是只根据 interaction 类型猜测：出现“受惊、惊讶、停下、站住、观察机器人、注视机器人、等待机器人先通过、行人主动让行”等语义时选择 passive；仅描述交叉、跟随、超越、对向通行或没有明确特殊反应时选择 neutral。行人不使用 aggressive/threatening 模式。
+- 用户未描述特殊行人反应时选择 neutral。不要输出 behavior_tree、behavior.type 或 behavior_parameters；程序会依据 behavior_mode 使用固定的 Arena Jazzy profile，保证不同场景之间参数一致。
+- 根据用户 prompt 为机器人选择 social_attributes，且只能是 passive、neutral、aggressive：passive 更早减速并礼让，neutral 为平衡默认值，aggressive 保持路线、间距更小且巡航更快。用户未描述机器人社交风格时选择 neutral；超越或明确强势通行通常选择 aggressive，明确礼让或谨慎通行选择 passive。
+- robot.social_yielding 必须是布尔值。默认且通常输出 false；只有用户 prompt 明确要求“机器人主动让行、机器人停车/减速等待行人先通过、启用 social yielding”时才输出 true。不要因为 social_attributes 为 passive 就自动开启 social_yielding。
+- 如果 robot schema 中出现 waypoint_tolerance 与 final_goal_tolerance，必须严格使用 schema 给出的数值；未出现时不要输出这两个字段。
+- agents[].behavior_mode、robot.social_attributes 和 robot.social_yielding 都是必填字段，不得省略、改名或输出 null。
 - 场景专用规则、区域连通规则、region_transitions 和 navmesh 约束同时适用于行人和机器人。
 - role 和 behavior 简短英文即可；behavior 不要包含坐标细节。
 - model 字段现在表示行人的职业类别，不是具体人物资产；具体人物模型由下层系统决定。
 - model 只能是 pedestrian、doctor、police、construction_worker 之一，必须使用完全一致的小写英文值。
 - 同一个 scenario 中 doctor 最多 2 人，police 最多 4 人，construction_worker 最多 4 人；pedestrian 数量不限。若人数超过某个职业上限，必须改用其他合法类别，不能突破上限。
-- velocity 使用 0.6 到 1.2；desired_velocity 使用 0.8 到 1.5，且通常大于或等于 velocity。
+- desired_velocity 使用 0.8 到 1.5。passive 行人的最终 desired_velocity 会由程序固定为 0.8。不要输出 velocity。
 - 尽量不要让行人会在同一时间走入同一个 waypoint，除非语义上需要交互、碰面、错身而过等，可以选取相邻waypoint表示这一语义。
 
 输出要求：
@@ -525,7 +896,7 @@ def build_llm_prompt(
 场景专用规则：
 {scene_prompt or "无。"}
 
-可用 region 范围和候选 waypoint 列表：
+{reference_section}可用 region 范围和候选 waypoint 列表：
 {waypoint_text}
 
 用户需求：
@@ -732,10 +1103,15 @@ def call_gemini_llm(
         if exc.response is not None:
             message = f"{message}; {response_summary(exc.response, api_key)}"
         raise RuntimeError(f"LLM request failed: {message}") from exc
-    response_json = response.json()
+    response_data = response_json(
+        response,
+        provider="Gemini-compatible API",
+        endpoint=endpoint,
+        api_key=api_key,
+    )
     return LLMCallResult(
-        data=parse_gemini_response(response_json),
-        usage=parse_gemini_token_usage(response_json),
+        data=parse_gemini_response(response_data),
+        usage=parse_gemini_token_usage(response_data),
     )
 
 
@@ -785,37 +1161,6 @@ def parse_openai_token_usage(response_json: dict[str, Any]) -> TokenUsage:
     )
 
 
-<<<<<<< HEAD
-def parse_openai_token_usage(response_json: dict[str, Any]) -> TokenUsage:
-    usage = response_json.get("usage")
-    if not isinstance(usage, dict):
-        return TokenUsage()
-
-    input_details = usage.get("input_tokens_details")
-    output_details = usage.get("output_tokens_details")
-    cached_tokens = (
-        token_count(input_details.get("cached_tokens"))
-        if isinstance(input_details, dict)
-        else 0
-    )
-    reasoning_tokens = (
-        token_count(output_details.get("reasoning_tokens"))
-        if isinstance(output_details, dict)
-        else 0
-    )
-    input_tokens = token_count(usage.get("input_tokens"))
-    output_tokens = token_count(usage.get("output_tokens"))
-    total_tokens = token_count(usage.get("total_tokens"))
-    if total_tokens == 0:
-        total_tokens = input_tokens + output_tokens
-    return TokenUsage(
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        reasoning_tokens=reasoning_tokens,
-        cached_tokens=cached_tokens,
-        total_tokens=total_tokens,
-        reported=True,
-=======
 def parse_openai_chat_response(response_json: dict[str, Any]) -> Any:
     choices = response_json.get("choices")
     if not isinstance(choices, list) or not choices:
@@ -840,7 +1185,7 @@ def call_openai_chat_llm(
     config: dict[str, Any],
     prompt: str,
     image_paths: list[Path],
-) -> Any:
+) -> LLMCallResult:
     api_base_url = config_value(config, "api_base_url").rstrip("/")
     api_key = config_value(config, "api_key")
     model_id = config_value(config, "model_id")
@@ -893,14 +1238,25 @@ def call_openai_chat_llm(
         if exc.response is not None:
             message = f"{message}; {response_summary(exc.response, api_key)}"
         raise RuntimeError(f"OpenAI Chat LLM request failed: {message}") from exc
-    return parse_openai_chat_response(
-        response_json(
-            response,
-            provider="OpenAI Chat-compatible API",
-            endpoint=endpoint,
-            api_key=api_key,
-        )
->>>>>>> 7f5b0e2 (Add configurable scenario generation and OpenAI chat support)
+    response_data = response_json(
+        response,
+        provider="OpenAI Chat-compatible API",
+        endpoint=endpoint,
+        api_key=api_key,
+    )
+    usage = response_data.get("usage")
+    if isinstance(usage, dict) and "prompt_tokens" in usage:
+        usage = {
+            "input_tokens": usage.get("prompt_tokens"),
+            "output_tokens": usage.get("completion_tokens"),
+            "total_tokens": usage.get("total_tokens"),
+            "output_tokens_details": usage.get("completion_tokens_details"),
+            "input_tokens_details": usage.get("prompt_tokens_details"),
+        }
+        response_data = {**response_data, "usage": usage}
+    return LLMCallResult(
+        data=parse_openai_chat_response(response_data),
+        usage=parse_openai_token_usage(response_data),
     )
 
 
@@ -952,14 +1308,23 @@ def call_openai_responses_llm(
         if exc.response is not None:
             message = f"{message}; {response_summary(exc.response, api_key)}"
         raise RuntimeError(f"OpenAI LLM request failed: {message}") from exc
-    response_json = response.json()
+    response_data = response_json(
+        response,
+        provider="OpenAI-compatible API",
+        endpoint=endpoint,
+        api_key=api_key,
+    )
     return LLMCallResult(
-        data=parse_openai_responses_response(response_json),
-        usage=parse_openai_token_usage(response_json),
+        data=parse_openai_responses_response(response_data),
+        usage=parse_openai_token_usage(response_data),
     )
 
 
-def call_llm(config: dict[str, Any], prompt: str, image_paths: list[Path]) -> Any:
+def call_llm_with_usage(
+    config: dict[str, Any],
+    prompt: str,
+    image_paths: list[Path],
+) -> LLMCallResult:
     llm_type = str(config.get("type", "gemini")).lower()
     if llm_type in {"gemini", "google"}:
         return call_gemini_llm(config, prompt, image_paths)
@@ -1139,7 +1504,95 @@ def robot_from_data(data: Any) -> dict[str, Any] | None:
     return None
 
 
-def robot_route_ids(robot: dict[str, Any]) -> tuple[str, list[str]] | None:
+def behavior_mode_from_agent(agent: dict[str, Any]) -> str:
+    raw_mode = agent.get("behavior_mode") or agent.get("hunav_behavior")
+    if raw_mode is not None:
+        mode = str(raw_mode).strip().lower()
+        mode = HUMAN_BEHAVIOR_ALIASES.get(mode, mode)
+        if mode not in HUMAN_BEHAVIOR_PROFILES:
+            raise ValueError(
+                f"Unsupported human behavior_mode {raw_mode!r}; expected one of "
+                f"{', '.join(HUMAN_BEHAVIOR_PROFILES)}"
+            )
+        return mode
+
+    behavior_tree = agent.get("behavior_tree")
+    if isinstance(behavior_tree, str):
+        for mode, profile in HUMAN_BEHAVIOR_PROFILES.items():
+            if behavior_tree == profile["behavior_tree"]:
+                return mode
+
+    raw_behavior = agent.get("behavior")
+    if isinstance(raw_behavior, dict):
+        raw_type = raw_behavior.get("type")
+        for mode, profile in HUMAN_BEHAVIOR_PROFILES.items():
+            if raw_type == profile["type"]:
+                return mode
+    return "neutral"
+
+
+def normalize_hunav_behavior(agent: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    mode = behavior_mode_from_agent(agent)
+    profile = HUMAN_BEHAVIOR_PROFILES[mode]
+    # The three Human modes are intentionally closed profiles. Prompt-level parameter
+    # changes would make otherwise comparable interaction scenarios non-reproducible.
+    return str(profile["behavior_tree"]), dict(profile["behavior"])
+
+
+def normalize_robot_social_attributes(robot: dict[str, Any]) -> str:
+    raw_attributes = robot.get("social_attributes", "neutral")
+    attributes = str(raw_attributes).strip().lower()
+    if attributes not in ROBOT_SOCIAL_ATTRIBUTES:
+        raise ValueError(
+            f"Unsupported robot social_attributes {raw_attributes!r}; expected one of "
+            f"{', '.join(ROBOT_SOCIAL_ATTRIBUTES)}"
+        )
+    return attributes
+
+
+def normalize_robot_social_yielding(robot: dict[str, Any]) -> bool:
+    value = robot.get("social_yielding", False)
+    if not isinstance(value, bool):
+        raise ValueError("robot.social_yielding must be true or false")
+    return value
+
+
+def validate_llm_social_fields(data: Any) -> None:
+    """Require the LLM to make every social-behavior choice explicit."""
+    if not isinstance(data, dict):
+        raise ValueError("LLM output must be a JSON object")
+
+    agents = data.get("agents")
+    if not isinstance(agents, list):
+        raise ValueError("LLM output is missing agents")
+    for index, agent in enumerate(agents):
+        if not isinstance(agent, dict):
+            raise ValueError(f"agents[{index}] must be an object")
+        if "behavior_mode" not in agent:
+            raise ValueError(f"agents[{index}].behavior_mode is required")
+        mode = agent["behavior_mode"]
+        if not isinstance(mode, str) or mode.strip().lower() not in HUMAN_BEHAVIOR_PROFILES:
+            raise ValueError(
+                f"agents[{index}].behavior_mode must be one of: "
+                f"{', '.join(HUMAN_BEHAVIOR_PROFILES)}"
+            )
+
+    robot = data.get("robot")
+    if not isinstance(robot, dict):
+        raise ValueError("LLM output is missing robot")
+    if "social_attributes" not in robot:
+        raise ValueError("robot.social_attributes is required")
+    if "social_yielding" not in robot:
+        raise ValueError("robot.social_yielding is required")
+    normalize_robot_social_attributes(robot)
+    normalize_robot_social_yielding(robot)
+
+
+def robot_route_ids(
+    robot: dict[str, Any],
+    *,
+    prefer_waypoints: bool = False,
+) -> tuple[str, list[str]] | None:
     start_id: str | None = None
     for key in ("start_waypoint", "start_waypoint_id", "spawn_waypoint", "spawn_waypoint_id", "spawn_id"):
         if key in robot:
@@ -1148,16 +1601,23 @@ def robot_route_ids(robot: dict[str, Any]) -> tuple[str, list[str]] | None:
     if start_id is None:
         return None
 
-    for key in ("goal_waypoint", "goal_waypoint_id", "goal_id", "target_waypoint", "target_waypoint_id"):
-        if key in robot:
-            return start_id, [extract_waypoint_id(robot[key], f"robot.{key}")]
-
     raw_waypoints = None
     for key in ("waypoints", "waypoint_ids", "path_waypoints", "route_waypoints", "path"):
         if key in robot:
             raw_waypoints = robot[key]
             break
-    if not isinstance(raw_waypoints, list):
+    if prefer_waypoints and isinstance(raw_waypoints, list) and raw_waypoints:
+        waypoint_ids = [
+            extract_waypoint_id(waypoint, f"robot.waypoints[{index}]")
+            for index, waypoint in enumerate(raw_waypoints)
+        ]
+        return start_id, waypoint_ids
+
+    for key in ("goal_waypoint", "goal_waypoint_id", "goal_id", "target_waypoint", "target_waypoint_id"):
+        if key in robot:
+            return start_id, [extract_waypoint_id(robot[key], f"robot.{key}")]
+
+    if not isinstance(raw_waypoints, list) or not raw_waypoints:
         return None
     waypoint_ids = [
         extract_waypoint_id(waypoint, f"robot.waypoints[{index}]")
@@ -1170,7 +1630,7 @@ def normalize_robot_agent(
     robot: dict[str, Any],
     keep_intermediate_waypoints: bool = False,
 ) -> dict[str, Any]:
-    route = robot_route_ids(robot)
+    route = robot_route_ids(robot, prefer_waypoints=keep_intermediate_waypoints)
     if route is None:
         return robot
     start_id, waypoint_ids = route
@@ -1201,6 +1661,14 @@ def normalize_robot_agent(
     return sparse_robot
 
 
+def validate_robot_intermediate_waypoints(robot: dict[str, Any]) -> None:
+    route = robot_route_ids(robot, prefer_waypoints=True)
+    if route is None or len(route[1]) < 2:
+        raise ValueError(
+            "robot.waypoints must contain at least one intermediate waypoint and a final goal"
+        )
+
+
 def build_robot_entry(
     robot: dict[str, Any],
     mapping: CameraRayMapping,
@@ -1208,15 +1676,24 @@ def build_robot_entry(
     waypoint_lookup: dict[str, tuple[float, float]] | None = None,
     waypoint_context: dict[str, Any] | None = None,
     keep_intermediate_waypoints: bool = False,
+    include_tolerances: bool = False,
 ) -> dict[str, Any]:
+    if keep_intermediate_waypoints:
+        validate_robot_intermediate_waypoints(robot)
     robot = normalize_robot_agent(robot, keep_intermediate_waypoints)
     pose, waypoints = route_from_agent(robot, "robot", mapping, args, waypoint_lookup)
-    return {
+    entry = {
         "name": "robot",
         "pose": pose,
+        "social_attributes": normalize_robot_social_attributes(robot),
+        "social_yielding": normalize_robot_social_yielding(robot),
         "waypoints": waypoints,
         "behavior": str(robot.get("behavior") or ""),
     }
+    if include_tolerances:
+        entry["waypoint_tolerance"] = ROBOT_WAYPOINT_TOLERANCE
+        entry["final_goal_tolerance"] = ROBOT_FINAL_GOAL_TOLERANCE
+    return entry
 
 
 def validated_agent_models(
@@ -1257,28 +1734,37 @@ def build_scenario(
     for index, (agent, agent_model) in enumerate(zip(agents, agent_models), start=1):
         name = str(agent.get("name") or f"hunav_{index}")
         pose, waypoints = route_from_agent(agent, name, mapping, args, waypoint_lookup)
-
-        dynamic_agents.append(
-            {
-                "name": name,
-                "model": agent_model,
-                "pose": pose,
-                "behavior_tree": str(agent.get("behavior_tree") or args.default_behavior_tree),
-                "velocity": rounded(float(agent.get("velocity", args.default_velocity)), args.round),
-                "desired_velocity": rounded(
-                    float(agent.get("desired_velocity", args.default_desired_velocity)),
-                    args.round,
-                ),
-                "waypoints": waypoints,
-            }
+        behavior_mode = behavior_mode_from_agent(agent)
+        behavior_profile = HUMAN_BEHAVIOR_PROFILES[behavior_mode]
+        behavior_tree, behavior = normalize_hunav_behavior(agent)
+        desired_velocity = behavior_profile.get(
+            "desired_velocity",
+            agent.get("desired_velocity", args.default_desired_velocity),
         )
+
+        entry = {
+            "name": name,
+            "model": agent_model,
+            "pose": pose,
+            "behavior_tree": behavior_tree,
+            "behavior": behavior,
+            "desired_velocity": rounded(
+                float(desired_velocity),
+                args.round,
+            ),
+        }
+        social_force_factor = getattr(args, "human_social_force_factor", None)
+        if social_force_factor is not None and "social_force_factor" not in behavior:
+            entry["social_force_factor"] = float(social_force_factor)
+        entry["waypoints"] = waypoints
+        dynamic_agents.append(entry)
 
     return {"dynamic": dynamic_agents}
 
 
 def main() -> None:
     args = parse_args()
-    scene_dir = Path(args.scene_dir).expanduser().resolve()
+    scene_dir = resolve_scene_dir(Path(args.scene_dir))
     mapping_path = (
         Path(args.mapping).expanduser().resolve()
         if args.mapping
@@ -1288,7 +1774,7 @@ def main() -> None:
 
     mapping = load_mapping(mapping_path)
     llm_config_path = Path(args.llm_config).expanduser().resolve()
-    llm_config = load_yaml_file(llm_config_path)
+    llm_config = load_llm_config(llm_config_path)
     overlay_image_path = scene_dir / "overlay.png"
     if not overlay_image_path.exists():
         raise FileNotFoundError(f"Missing required overlay image: {overlay_image_path}")
@@ -1299,22 +1785,49 @@ def main() -> None:
 
     waypoint_context = load_waypoint_context(scene_dir)
     waypoint_lookup = build_waypoint_lookup(waypoint_context)
+    reference_episodes: list[dict[str, Any]] = []
+    reference_dirs: list[Path] = []
+    if args.include_reference_episodes:
+        reference_dirs = (
+            [Path(path).expanduser().resolve() for path in args.reference_dir]
+            if args.reference_dir
+            else [(Path("reference_episodes") / scene_dir.name).resolve()]
+        )
+        reference_scene_root = (
+            Path(args.reference_scene_root).expanduser().resolve()
+            if args.reference_scene_root
+            else scene_dir.parent
+        )
+        reference_episodes = load_reference_episodes_from_sources(
+            reference_dirs, reference_scene_root
+        )
     prompt = build_llm_prompt(
         scene_dir,
         mapping,
         read_scene_prompt(scene_dir, args),
         read_prompt(args),
-        args.robot_intermediate_waypoints,
+        reference_episodes=reference_episodes,
+        robot_intermediate_waypoints=args.robot_intermediate_waypoints,
+        robot_tolerances=getattr(args, "robot_tolerances", False),
+        include_reference_episodes=args.include_reference_episodes,
     )
     if args.dry_run_prompt:
         print(prompt)
         print("\nAttached images:")
         for image_index, image_path in enumerate(llm_image_paths, start=1):
             print(f"{image_index}. {image_path}")
+        if args.include_reference_episodes:
+            print(
+                f"\nReference episodes: {len(reference_episodes)} from "
+                + ", ".join(str(path) for path in reference_dirs)
+            )
+        else:
+            print("\nReference episodes: disabled")
         return
 
     llm_result = call_llm_with_usage(llm_config, prompt, llm_image_paths)
     llm_data = llm_result.data
+    validate_llm_social_fields(llm_data)
     print(
         TOKEN_USAGE_PREFIX
         + json.dumps(llm_result.usage.to_dict(), separators=(",", ":")),
@@ -1340,6 +1853,7 @@ def main() -> None:
             waypoint_lookup,
             waypoint_context,
             args.robot_intermediate_waypoints,
+            getattr(args, "robot_tolerances", False),
         )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

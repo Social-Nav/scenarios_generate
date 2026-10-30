@@ -17,25 +17,38 @@
 
 - 输出 schema 强制要求行人的 `behavior_mode`，以及机器人的 `social_attributes` 和
   `social_yielding`。
-- 运行配置支持 `reference_root`、`reference_sets` 和 `include_reference_episodes`。
+- 运行配置通过 `interaction_type` 选择交互类型，自动从 prompt 库读取同名 prompt，并从
+  `reference_root/<interaction_type>/` 读取同名 reference set；`include_reference_episodes`
+  控制是否注入 reference。
   每条 reference episode 通过 `metadata.yaml` 声明其源场景，并携带可跨场景复用的
   `interaction_relative` 几何关系。
 - `count` 控制最终 scenario 总数，`batch_size` 控制一次 LLM 请求生成多少条；支持固定人数或
   `min_pedestrians`/`max_pedestrians` 加 `seed` 的可复现人数范围。
 - 行人只输出 `desired_velocity`，不再输出旧的 `velocity` 字段。
+- prompt 与数值参数分离：`scenario_generation_prompt.yaml` 只保存场景语义，
+  `scenario_generation_parameters.yaml` 按 `interaction_type` 保存显式参数。
+- 结构化参数由主配置中的 `parameter_config` 读取，并同时传给单条和 batch 转换流程；旧的
+  数值 prompt 正则解析逻辑已移除。
+- 结构化参数优先级最高，可以覆盖行为 profile 和 LLM 输出；参数库没有声明的可选字段不会
+  额外写入最终 `scenario.yaml`。
+- `cyclic_goals`、行人速度、force 参数、机器人 `desired_linear_vel` 和 goal tolerance
+  都可以按 interaction 在结构化参数中独立配置。
 - prompt 明确包含“机器人路径由多个waypoints构成”时，机器人保留中间 waypoint；否则仍使用
   start + goal。
-- prompt 同时提及 `waypoint_tolerance` 和 `final_goal_tolerance` 时，机器人写入
-  `waypoint_tolerance: 0.50` 与 `final_goal_tolerance: 0.25`。
+- `waypoint_tolerance`、`final_goal_tolerance`、`desired_linear_vel` 等机器人参数由
+  `scenario_generation_parameters.yaml` 中对应 interaction 的 `robot` 节点控制。
 
 ### 社交行为规则
 
 - 行人 `neutral` 使用 `BTRegularNav.xml` 和 `behavior.type: 1`。
-- 行人 `passive` 使用固定 profile：`BTSurprisedNav.xml`、`dist: 0.8`、`duration: 1.0`、
-  `once: false`、`vel: 0.0`、`obstacle_force_factor: 2.0`、
-  `social_force_factor: 10.0`，并强制 `desired_velocity: 0.8`。
-- `following_human` 中的 neutral 行人会额外写入顶层 `social_force_factor: 10.0`；passive
-  行人已在 behavior profile 内包含该值，因此不会重复写入。
+- 行人 `passive` 的默认 profile 使用 `BTSurprisedNav.xml`，并在 `behavior` 内提供：
+  `type: 3`、`dist: 0.8`、`duration: 1.0`、`once: false`、`vel: 0.0`、
+  `obstacle_force_factor: 2.0` 和 `social_force_factor: 10.0`。passive profile 本身不再
+  固定 `desired_velocity`。
+- 上述数值是 passive 的默认 profile，不是所有场景的最终固定值。若某个 interaction 的
+  `scenario_generation_parameters.yaml` 显式配置了对应字段，结构化参数会覆盖 profile；
+  未配置的字段才保留 profile 默认值或使用 LLM 输出/程序默认值。
+- 行人的 force 参数写在 `behavior` 下，`desired_velocity` 和 `cyclic_goals` 写在行人条目顶层。
 - robot 的 social mode 支持 `passive`、`neutral`、`aggressive`，主动让行由独立的
   `social_yielding` 布尔值控制。
 
@@ -199,10 +212,66 @@ python3 scripts/generate_scenario_variants.py \
   --config configs/scenario_generation.yaml
 ```
 
-配置文件包含 `scene_dir`、`output_root`、`llm_config`、`prompt`、`count`、
-`reference_root`、`reference_sets`、`include_reference_episodes`、`pedestrians`、`max_attempts`、
-`overwrite` 和 `dry_run`。`include_reference_episodes: false` 会跳过 reference episode
-的读取、校验和 prompt 注入。命令行参数仍然可用，且会覆盖配置文件中的值；例如只生成一个候选并且不调用 LLM：
+主配置不再保存 prompt。使用 `interaction_type` 选择交互类型：
+
+```yaml
+scene_dir: new_grscenes/grscenes_25
+output_root: new_outputs
+llm_config: configs/llm_config.local.yaml
+
+interaction_type: following_human
+prompt_config: configs/scenario_generation_prompt.yaml
+parameter_config: configs/scenario_generation_parameters.yaml
+reference_root: reference_episodes
+include_reference_episodes: true
+
+count: 6
+batch_size: 1
+pedestrians: 1
+```
+
+程序会自动读取：
+
+```text
+configs/scenario_generation_prompt.yaml -> prompts.following_human
+reference_episodes/following_human/
+```
+
+数值和可选字段从独立的结构化参数库读取，不再从自然语言 prompt 解析：
+
+```yaml
+parameters:
+  perpendicular_traffic:
+    pedestrian:
+      desired_velocity: 0.6
+      social_force_factor: 10.0
+    robot:
+      desired_linear_vel: 0.8
+```
+
+只有参数库中明确写出的字段才会进入最终 `scenario.yaml`。没有写出的字段不会因为
+默认值或 prompt 语义被额外生成；例如未配置 `social_force_factor` 就不会输出该字段。
+结构化参数的优先级高于 passive/neutral 等行为 profile：profile 提供行为树和默认行为，
+但参数库中显式写出的 `desired_velocity`、force 参数、tolerance 或其他支持字段会覆盖 profile。
+
+prompt 库格式为：
+
+```yaml
+prompts:
+  following_human: >-
+    生成一个跟随行人的交互场景……
+  robot_overtaking: >-
+    生成一个机器人超越行人的交互场景……
+```
+
+新增 interaction 时，需要同时添加 `prompts.<interaction_type>`，并按需添加
+`parameters.<interaction_type>`；需要参考 episode 时，再创建
+同名的 `reference_episodes/<interaction_type>/`。`include_reference_episodes: false` 会跳过
+reference episode 的读取、校验和 prompt 注入。`--prompt` 仍可临时覆盖 prompt 库中的文本。
+
+其他配置包括 `count`、`batch_size`、`pedestrians` 或
+`min_pedestrians`/`max_pedestrians`、`seed`、`max_attempts`、`overwrite` 和 `dry_run`。
+命令行参数仍会覆盖配置文件；例如只生成一个候选并且不调用 LLM：
 
 ```bash
 python3 scripts/generate_scenario_variants.py \
@@ -212,10 +281,12 @@ python3 scripts/generate_scenario_variants.py \
   --dry-run
 ```
 
-也可以继续完全使用命令行参数：
+也可以在运行时切换 interaction，而无需编辑 prompt：
 
 ```bash
-python3 scripts/generate_scenario_variants.py --config configs/scenario_generation.yaml
+python3 scripts/generate_scenario_variants.py \
+  --config configs/scenario_generation.yaml \
+  --interaction-type robot_overtaking
 ```
 
 输出结构：

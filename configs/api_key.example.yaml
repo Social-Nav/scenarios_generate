@@ -1,0 +1,3 @@
+# Copy this file to configs/api_key.local.yaml and replace the placeholder.
+# Never commit a real API key.
+api_key: "your_api_key"

@@ -1,0 +1,44 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "dining area visitor",
+      "model": "female_adult_business_02",
+      "from_region": {
+        "region_id": 1,
+        "label": "dining_area"
+      },
+      "to_region": {
+        "region_id": 1,
+        "label": "dining_area"
+      },
+      "spawn_waypoint": "wp_r01_dining_area_016",
+      "waypoints": [
+        "wp_r01_dining_area_017",
+        "wp_r01_dining_area_018",
+        "wp_r01_dining_area_019",
+        "wp_r01_dining_area_020",
+        "wp_r01_dining_area_021",
+        "wp_r01_dining_area_022",
+        "wp_r01_dining_area_023"
+      ],
+      "velocity": 0.9,
+      "desired_velocity": 1.1,
+      "behavior": "Walk steadily through the open dining passage toward the far side, keeping a straight course between the tables."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 1,
+      "label": "dining_area"
+    },
+    "to_region": {
+      "region_id": 1,
+      "label": "dining_area"
+    },
+    "start_waypoint": "wp_r01_dining_area_015",
+    "goal_waypoint": "wp_r01_dining_area_024",
+    "behavior": "Travel straight through the open central dining passage behind the pedestrian, maintaining a safe following distance and continuing beyond the pedestrian's destination."
+  }
+}

@@ -1,0 +1,34 @@
+# Explicit scenario parameters keyed by interaction_type.
+# Fields not listed here are intentionally omitted from generated scenario.yaml.
+parameters:
+  following_human:
+    pedestrian:
+      desired_velocity: 0.7
+      social_force_factor: 10.0
+    robot:
+      desired_linear_vel: 0.6
+      waypoint_tolerance: 0.50
+      final_goal_tolerance: 0.25
+
+  robot_overtaking:
+    pedestrian:
+      desired_velocity: 0.3
+      social_force_factor: 10.0
+    robot:
+      final_goal_tolerance: 0.50
+
+  entering_room:
+    pedestrian:
+      desired_velocity: 0.8
+
+  frontal_approach:
+    pedestrian:
+      desired_velocity: 0.8
+
+  perpendicular_traffic:
+    pedestrian:
+      desired_velocity: 0.8
+      social_force_factor: 10.0
+      cyclic_goals: true
+    robot:
+      desired_linear_vel: 0.8

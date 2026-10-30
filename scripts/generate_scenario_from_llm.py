@@ -21,11 +21,7 @@ from scene_names import canonical_scene_id, resolve_scene_dir
 DEFAULT_BEHAVIOR_TREE = "BTRegularNav.xml"
 DEFAULT_MODEL = "pedestrian"
 DEFAULT_DESIRED_VELOCITY = 1.0
-FOLLOWING_HUMAN_SOCIAL_FORCE_FACTOR = 10.0
 ROBOT_INTERMEDIATE_WAYPOINTS_PHRASE = "机器人路径由多个waypoints构成"
-ROBOT_TOLERANCE_FIELDS = ("waypoint_tolerance", "final_goal_tolerance")
-ROBOT_WAYPOINT_TOLERANCE = 0.50
-ROBOT_FINAL_GOAL_TOLERANCE = 0.25
 ROBOT_SOCIAL_ATTRIBUTES = ("passive", "neutral", "aggressive")
 HUMAN_BEHAVIOR_PROFILES: dict[str, dict[str, Any]] = {
     "neutral": {
@@ -45,13 +41,14 @@ HUMAN_BEHAVIOR_PROFILES: dict[str, dict[str, Any]] = {
             "obstacle_force_factor": 2.0,
             "social_force_factor": 10.0,
         },
-        "desired_velocity": 0.8,
     },
 }
 HUMAN_BEHAVIOR_ALIASES = {
     "regular": "neutral",
     "surprised": "passive",
 }
+
+
 AVAILABLE_AGENT_MODELS = (
     "pedestrian",
     "doctor",
@@ -220,14 +217,8 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--robot-tolerances",
-        action="store_true",
-        help="Write waypoint_tolerance and final_goal_tolerance to the robot YAML entry.",
-    )
-    parser.add_argument(
-        "--human-social-force-factor",
-        type=float,
-        help="Optional social_force_factor written to every human YAML entry.",
+        "--structured-parameters",
+        help="JSON object containing explicit pedestrian and robot parameter overrides.",
     )
     parser.add_argument(
         "--round",
@@ -411,11 +402,6 @@ def robot_intermediate_waypoints_requested(prompt: str) -> bool:
     """Return whether the user explicitly requests a multi-waypoint robot route."""
     normalized = "".join(prompt.split()).lower()
     return ROBOT_INTERMEDIATE_WAYPOINTS_PHRASE in normalized
-
-
-def robot_tolerances_requested(prompt: str) -> bool:
-    normalized = "".join(prompt.split()).lower()
-    return all(field in normalized for field in ROBOT_TOLERANCE_FIELDS)
 
 
 def build_waypoint_region_lookup(waypoint_context: dict[str, Any]) -> dict[str, tuple[int | None, str]]:
@@ -733,7 +719,6 @@ def build_llm_prompt(
     user_prompt: str,
     reference_episodes: list[dict[str, Any]] | None = None,
     robot_intermediate_waypoints: bool = False,
-    robot_tolerances: bool = False,
     batch_agent_counts: list[int] | None = None,
     include_reference_episodes: bool = True,
 ) -> str:
@@ -790,16 +775,6 @@ def build_llm_prompt(
     "social_yielding": false,
     "behavior": "brief robot navigation purpose"
   }"""
-
-    tolerance_schema = ""
-    if robot_tolerances:
-        tolerance_schema = f''',
-    "waypoint_tolerance": {ROBOT_WAYPOINT_TOLERANCE:.2f},
-    "final_goal_tolerance": {ROBOT_FINAL_GOAL_TOLERANCE:.2f}'''
-        robot_schema = robot_schema.replace(
-            '\n    "behavior": "brief robot navigation purpose"',
-            tolerance_schema + '\n    "behavior": "brief robot navigation purpose"',
-        )
 
     scenario_schema = f"""{{
   "agents": [
@@ -872,14 +847,14 @@ def build_llm_prompt(
 - 用户未描述特殊行人反应时选择 neutral。不要输出 behavior_tree、behavior.type 或 behavior_parameters；程序会依据 behavior_mode 使用固定的 Arena Jazzy profile，保证不同场景之间参数一致。
 - 根据用户 prompt 为机器人选择 social_attributes，且只能是 passive、neutral、aggressive：passive 更早减速并礼让，neutral 为平衡默认值，aggressive 保持路线、间距更小且巡航更快。用户未描述机器人社交风格时选择 neutral；超越或明确强势通行通常选择 aggressive，明确礼让或谨慎通行选择 passive。
 - robot.social_yielding 必须是布尔值。默认且通常输出 false；只有用户 prompt 明确要求“机器人主动让行、机器人停车/减速等待行人先通过、启用 social yielding”时才输出 true。不要因为 social_attributes 为 passive 就自动开启 social_yielding。
-- 如果 robot schema 中出现 waypoint_tolerance 与 final_goal_tolerance，必须严格使用 schema 给出的数值；未出现时不要输出这两个字段。
+- 机器人 tolerance、速度等可选数值不由 LLM 决定；如果最终场景需要这些字段，程序会从结构化参数配置写入。
 - agents[].behavior_mode、robot.social_attributes 和 robot.social_yielding 都是必填字段，不得省略、改名或输出 null。
 - 场景专用规则、区域连通规则、region_transitions 和 navmesh 约束同时适用于行人和机器人。
 - role 和 behavior 简短英文即可；behavior 不要包含坐标细节。
 - model 字段现在表示行人的职业类别，不是具体人物资产；具体人物模型由下层系统决定。
 - model 只能是 pedestrian、doctor、police、construction_worker 之一，必须使用完全一致的小写英文值。
 - 同一个 scenario 中 doctor 最多 2 人，police 最多 4 人，construction_worker 最多 4 人；pedestrian 数量不限。若人数超过某个职业上限，必须改用其他合法类别，不能突破上限。
-- desired_velocity 使用 0.8 到 1.5。passive 行人的最终 desired_velocity 会由程序固定为 0.8。不要输出 velocity。
+- desired_velocity 使用 0.8 到 1.5。desired_velocity 由结构化参数优先、其次使用 LLM 输出；未配置时才使用程序默认值。不要输出 velocity。
 - 尽量不要让行人会在同一时间走入同一个 waypoint，除非语义上需要交互、碰面、错身而过等，可以选取相邻waypoint表示这一语义。
 
 输出要求：
@@ -1676,7 +1651,7 @@ def build_robot_entry(
     waypoint_lookup: dict[str, tuple[float, float]] | None = None,
     waypoint_context: dict[str, Any] | None = None,
     keep_intermediate_waypoints: bool = False,
-    include_tolerances: bool = False,
+    parameters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if keep_intermediate_waypoints:
         validate_robot_intermediate_waypoints(robot)
@@ -1690,9 +1665,11 @@ def build_robot_entry(
         "waypoints": waypoints,
         "behavior": str(robot.get("behavior") or ""),
     }
-    if include_tolerances:
-        entry["waypoint_tolerance"] = ROBOT_WAYPOINT_TOLERANCE
-        entry["final_goal_tolerance"] = ROBOT_FINAL_GOAL_TOLERANCE
+    robot_parameters = (parameters or {}).get("robot", {})
+    if isinstance(robot_parameters, dict):
+        for field in ("desired_linear_vel", "waypoint_tolerance", "final_goal_tolerance"):
+            if field in robot_parameters:
+                entry[field] = float(robot_parameters[field])
     return entry
 
 
@@ -1737,9 +1714,16 @@ def build_scenario(
         behavior_mode = behavior_mode_from_agent(agent)
         behavior_profile = HUMAN_BEHAVIOR_PROFILES[behavior_mode]
         behavior_tree, behavior = normalize_hunav_behavior(agent)
-        desired_velocity = behavior_profile.get(
+        structured_parameters = getattr(args, "structured_parameters", {}) or {}
+        pedestrian_parameters = structured_parameters.get("pedestrian", {})
+        if not isinstance(pedestrian_parameters, dict):
+            pedestrian_parameters = {}
+        desired_velocity = pedestrian_parameters.get(
             "desired_velocity",
-            agent.get("desired_velocity", args.default_desired_velocity),
+            behavior_profile.get(
+                "desired_velocity",
+                agent.get("desired_velocity", args.default_desired_velocity),
+            ),
         )
 
         entry = {
@@ -1753,9 +1737,29 @@ def build_scenario(
                 args.round,
             ),
         }
-        social_force_factor = getattr(args, "human_social_force_factor", None)
-        if social_force_factor is not None and "social_force_factor" not in behavior:
-            entry["social_force_factor"] = float(social_force_factor)
+        for field, value in pedestrian_parameters.items():
+            if field == "desired_velocity":
+                continue
+            if field == "cyclic_goals":
+                entry["cyclic_goals"] = bool(value)
+                continue
+            if field in {
+                "type",
+                "dist",
+                "duration",
+                "once",
+                "vel",
+                "social_force_factor",
+                "obstacle_force_factor",
+                "goal_force_factor",
+                "other_force_factor",
+            }:
+                if field in {"once"}:
+                    entry["behavior"][field] = bool(value)
+                elif field in {"type"}:
+                    entry["behavior"][field] = int(value)
+                else:
+                    entry["behavior"][field] = float(value)
         entry["waypoints"] = waypoints
         dynamic_agents.append(entry)
 
@@ -1764,6 +1768,10 @@ def build_scenario(
 
 def main() -> None:
     args = parse_args()
+    if isinstance(getattr(args, "structured_parameters", None), str):
+        args.structured_parameters = json.loads(args.structured_parameters)
+    elif getattr(args, "structured_parameters", None) is None:
+        args.structured_parameters = {}
     scene_dir = resolve_scene_dir(Path(args.scene_dir))
     mapping_path = (
         Path(args.mapping).expanduser().resolve()
@@ -1808,7 +1816,6 @@ def main() -> None:
         read_prompt(args),
         reference_episodes=reference_episodes,
         robot_intermediate_waypoints=args.robot_intermediate_waypoints,
-        robot_tolerances=getattr(args, "robot_tolerances", False),
         include_reference_episodes=args.include_reference_episodes,
     )
     if args.dry_run_prompt:
@@ -1853,7 +1860,7 @@ def main() -> None:
             waypoint_lookup,
             waypoint_context,
             args.robot_intermediate_waypoints,
-            getattr(args, "robot_tolerances", False),
+            args.structured_parameters,
         )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

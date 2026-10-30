@@ -1,0 +1,51 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [1.0202, 1.38937, 73.07249]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+  desired_velocity: 1.1
+  waypoints:
+  - [1.14362, 1.7949, 99.61973]
+  - [0.79098, 3.87547, 54.24611]
+  - [1.10836, 4.31627, 94.57392]
+  - [1.0731, 4.75707, 93.6745]
+  - [0.94967, 6.67895, 102.36249]
+  - [0.66756, 7.96608, 96.95296]
+  - [0.5794, 8.68899, 96.95296]
+- name: hunav_2
+  model: pedestrian
+  pose: [1.86653, 7.64871, -85.50285]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+  desired_velocity: 1.0
+  waypoints:
+  - [1.98996, 6.07947, -92.14759]
+  - [1.93706, 4.66891, -90.0]
+  - [1.93706, 3.31125, -94.57392]
+  - [1.86653, 2.42965, -90.0]
+  - [1.86653, 1.35411, -90.0]
+- name: hunav_3
+  model: pedestrian
+  pose: [3.43578, 1.83017, 95.03193]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+  desired_velocity: 0.9
+  waypoints:
+  - [3.18893, 4.63365, 101.56013]
+  - [2.71287, 6.96106, 78.98289]
+  - [3.10077, 8.95347, 45.0]
+  - [3.62973, 9.48243, 45.0]
+robot:
+  name: robot
+  pose: [-0.77826, 3.9989, 12.1942]
+  social_attributes: neutral
+  social_yielding: false
+  waypoints:
+  - [7.54402, 5.79736, 12.1942]
+  behavior: Traverses the classroom vertically and crosses the pedestrian flows.

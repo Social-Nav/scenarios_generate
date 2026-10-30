@@ -17,13 +17,11 @@ import yaml
 
 from generate_scenario_from_llm import (
     DEFAULT_MODEL,
-    FOLLOWING_HUMAN_SOCIAL_FORCE_FACTOR,
     TOKEN_USAGE_PREFIX,
     TokenUsage,
     combine_token_usage,
     format_token_usage,
     robot_intermediate_waypoints_requested,
-    robot_tolerances_requested,
     token_usage_from_dict,
     validate_llm_social_fields,
     validated_agent_models,
@@ -42,10 +40,13 @@ RUN_CONFIG_KEYS = {
     "scene_dir",
     "output_root",
     "llm_config",
+    "prompt_config",
+    "interaction_type",
     "reference_root",
     "reference_sets",
     "include_reference_episodes",
     "prompt",
+    "parameter_config",
     "count",
     "batch_size",
     "max_attempts",
@@ -73,10 +74,13 @@ RUN_DEFAULTS = {
     "skip_previews": False,
     "skip_overview": False,
     "reference_root": "reference_episodes",
+    "prompt_config": "configs/scenario_generation_prompt.yaml",
+    "parameter_config": "configs/scenario_generation_parameters.yaml",
+    "interaction_type": None,
     "reference_sets": None,
     "include_reference_episodes": True,
 }
-REQUIRED_RUN_VALUES = ("scene_dir", "output_root", "llm_config", "prompt")
+REQUIRED_RUN_VALUES = ("scene_dir", "output_root", "llm_config", "interaction_type")
 
 
 def load_run_config(path: Path) -> dict[str, Any]:
@@ -87,6 +91,36 @@ def load_run_config(path: Path) -> dict[str, Any]:
     if unknown:
         raise ValueError(f"Unknown run config keys in {path}: {', '.join(unknown)}")
     return data
+
+
+def load_prompt_config(path: Path) -> dict[str, str]:
+    """Load the named interaction prompts from a YAML prompt library."""
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a YAML object")
+    prompts = data.get("prompts", data)
+    if not isinstance(prompts, dict) or not prompts:
+        raise ValueError(f"{path} must contain a non-empty 'prompts' mapping")
+    invalid = [
+        key
+        for key, value in prompts.items()
+        if not isinstance(key, str)
+        or not isinstance(value, str)
+        or not value.strip()
+    ]
+    if invalid:
+        raise ValueError(f"{path} contains invalid prompt entries: {', '.join(map(str, invalid))}")
+    return {key: value.strip() for key, value in prompts.items()}
+
+
+def load_parameter_config(path: Path) -> dict[str, dict[str, Any]]:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a YAML object")
+    parameters = data.get("parameters", data)
+    if not isinstance(parameters, dict):
+        raise ValueError(f"{path} must contain a 'parameters' mapping")
+    return parameters
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -100,7 +134,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--scene-dir", help="Prepared scene directory.")
     parser.add_argument("--output-root", help="Root directory for all generated outputs.")
     parser.add_argument("--llm-config", help="LLM YAML configuration path.")
-    parser.add_argument("--prompt", help="Common scenario request for every variant.")
+    parser.add_argument("--prompt", help="Optional prompt override for every variant.")
+    parser.add_argument("--prompt-config", help="YAML library containing prompts by interaction type.")
+    parser.add_argument("--interaction-type", help="Interaction type selecting the prompt and reference set.")
     parser.add_argument("--reference-root", help="Root directory containing reference sets.")
     parser.add_argument(
         "--reference-set",
@@ -201,6 +237,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         if cli_value is not None:
             values[key] = cli_value
 
+    if values.get("interaction_type") is None and values.get("reference_sets"):
+        reference_sets = values["reference_sets"]
+        if isinstance(reference_sets, list) and len(reference_sets) == 1:
+            values["interaction_type"] = reference_sets[0]
+
     missing = [key for key in REQUIRED_RUN_VALUES if not values.get(key)]
     if missing:
         parser.error(
@@ -209,6 +250,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         )
     if values["pedestrians"] is None and values["min_pedestrians"] is None:
         values["pedestrians"] = 2
+    prompt_config_path = Path(values["prompt_config"]).expanduser().resolve()
+    if not prompt_config_path.is_file():
+        parser.error(f"prompt config not found: {prompt_config_path}")
+    try:
+        prompts = load_prompt_config(prompt_config_path)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        parser.error(str(exc))
+    interaction_type = str(values["interaction_type"])
+    parameter_config_path = Path(values["parameter_config"]).expanduser().resolve()
+    if not parameter_config_path.is_file():
+        parser.error(f"parameter config not found: {parameter_config_path}")
+    try:
+        parameter_library = load_parameter_config(parameter_config_path)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        parser.error(str(exc))
+    values["structured_parameters"] = parameter_library.get(interaction_type, {})
+    if values.get("prompt") is None:
+        if interaction_type not in prompts:
+            parser.error(
+                f"interaction type {interaction_type!r} is missing from {prompt_config_path}"
+            )
+        values["prompt"] = prompts[interaction_type]
+    if values.get("reference_sets") is None:
+        values["reference_sets"] = [interaction_type]
     values["config"] = cli_args.config
     return argparse.Namespace(**values)
 
@@ -647,15 +712,7 @@ def run_batched(
             command.extend(reference_command_args(args, scene_dir))
             if robot_intermediate_waypoints_requested(args.prompt):
                 command.append("--robot-intermediate-waypoints")
-            if robot_tolerances_requested(args.prompt):
-                command.append("--robot-tolerances")
-            if interaction_type == "following_human":
-                command.extend(
-                    [
-                        "--human-social-force-factor",
-                        str(FOLLOWING_HUMAN_SOCIAL_FORCE_FACTOR),
-                    ]
-                )
+            command.extend(["--structured-parameters", json.dumps(args.structured_parameters)])
             print(
                 f"GENERATING {batch_label} | batch {batch_index}/{total_batches} | "
                 f"{len(batch_items)} scenarios | "
@@ -963,15 +1020,7 @@ def main() -> None:
             command.extend(reference_command_args(args, scene_dir))
             if robot_intermediate_waypoints_requested(args.prompt):
                 command.append("--robot-intermediate-waypoints")
-            if robot_tolerances_requested(args.prompt):
-                command.append("--robot-tolerances")
-            if interaction_type == "following_human":
-                command.extend(
-                    [
-                        "--human-social-force-factor",
-                        str(FOLLOWING_HUMAN_SOCIAL_FORCE_FACTOR),
-                    ]
-                )
+            command.extend(["--structured-parameters", json.dumps(args.structured_parameters)])
             print(
                 f"GENERATING scenario_{variant_number:03d} attempt {attempt}/{args.max_attempts}",
                 flush=True,

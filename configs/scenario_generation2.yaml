@@ -1,73 +1,19 @@
 # Edit this file, then run:
-# python3 scripts/generate_scenario_variants.py --config configs/scenario_generation.yaml
+# python3 scripts/generate_scenario_variants.py --config configs/scenario_generation2.yaml
 
 scene_dir: new_grscenes/grscenes_19
 output_root: new_outputs
 llm_config: configs/llm_config.local.yaml
+
+interaction_type: entering_room
+prompt_config: configs/scenario_generation_prompt.yaml
+parameter_config: configs/scenario_generation_parameters.yaml
 reference_root: reference_episodes
-# 选择且只选择一个参考集；它也会作为新结果的 interaction_type。
-reference_sets:
-  - entering_room
-# false 时不读取 reference episode，也不会将其加入 LLM prompt。
 include_reference_episodes: false
-
-# Following human
-# prompt: >-
-#   生成1个行人和1条机器人同向运动的直线路线,行人人起点必须位于机器人起点正前方（以路线运动方向为准）,行人人终点位于机器人终点前方并保持一定距离,
-#   两者路线都必须是没有大角度弯角(如90度弯角)的较长直线，且各自起点和终点位置接近，尽量选择长的走廊过道或宽阔区域规划路线
-
-# Intersection Wait
-# prompt: >-
-#   生成1个行人和1条机器人垂直交叉直线运动的路线,机器人和行人起点均位于由不同障碍物构成的十字路口或T字路口中,
-#   二者路线在路口中心垂直交叉,且交叉点在各自路径起始阶段(前三个waypoints之内),即两者刚开始运动时就发生路径冲突，
-#   两者路线长度偏短到中等,机器人社交属性为passive,不启用主动让行。
-
-# Intersection Proceed
-# prompt: >-
-#   生成1个行人和1条机器人垂直交叉直线运动的路线,机器人和行人起点均位于由不同障碍物构成的十字路口或T字路口中,
-#   二者路线在路口中心垂直交叉,且交叉点在各自路径起始阶段(前三个waypoints之内),即两者刚开始运动时就发生路径冲突，
-#   两者路线长度偏短或中等,机器人社交属性为aggressive,不启用主动让行,行人社交属性为passive。
-
-# Robot Overtaking
-# prompt: >-
-#   生成1个行人和1条机器人同方向运动的直线路线,机器人起点必须位于行人起点正后方（以路线运动方向为准）,机器人终点位于行人终点前方,
-#   两者路线都必须是没有大角度弯角(如90度弯角)的较长直线，且各自起点和终点位置接近，尽量选择长的走廊过道或宽阔区域规划路线
-
-# Pedestrian Overtaking
-# prompt: >-
-#   生成1个行人和1条机器人同方向运动的直线路线,行人起点必须位于机器人起点正后方（以路线运动方向为准）,行人终点位于机器人终点前方,
-#   两者路线都必须是没有大角度弯角(如90度弯角)的较长直线，且各自起点和终点位置接近，尽量选择长的走廊过道或宽阔区域规划路线
-
-# Exiting Room
-# prompt: >-
-#   生成1个行人和1条机器人相向运动的路线,行人和机器人起点分别位于同一房间门口外和内且都靠近门口，
-#   行人向房间内移动，机器人向房间外运动,二者路径长度中等,路径冲突发生在该房间门口，尽量选择开阔的房间规划冲突场景，
-#   机器人路径为一条离开房间的简单直线路径, 机器人社交属性为neutral,启用主动让行,行人社交属性为passive。
-
-# Entering Room
-prompt: >-
-  生成1个行人和1条机器人相向运动的路线,行人和机器人起点分别位于房间内和房间外且就在门口两边,
-  行人朝向正对房间外并向房间外移动，机器人朝向正对房间内并向房间内运动,二者路径冲突发生在该房间门口.
-  行人出房间后路径应偏长远离房间门口,行人终点尽量位于开阔区域,机器人社交属性为passive,行人社交属性为passive,启用主动让行.
-
-# Perpendicular Traffic
-# prompt: >-
-#   生成多个行人和1条机器人的运动路线,行人数量为2到5随机,每个行人运动路线为中等长度直线,路径互相平行且靠近,
-#   行人路径朝向随机，起点不能离机器人起点太远.机器人路径基本垂直于所有行人路径且横穿过所有行人路径,尽量选择开阔的房间规划冲突场景，
-#   机器人社交属性为aggressive.
-
-# Parallel Traffic
-# prompt: >-
-#   生成多个行人和1条机器人的运动路线,行人数量为2到4随机,每个行人以及机器人运动路线均为中等长度直线,路径互相平行且靠近,
-#   各自路径朝向随机,尽量选择开阔的房间规划冲突场景,机器人社交属性为aggressive.
 
 count: 6
 batch_size: 1
 pedestrians: 1
 max_attempts: 3
-
-# true 会重新生成已有的 scenario_001、scenario_002 等结果。
 overwrite: true
-
-# true 只检查配置和输出路径，不调用 LLM。
 dry_run: false

@@ -1,0 +1,45 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [2.25444, 3.98127, -5.44033]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+    social_force_factor: 10.0
+  velocity: 0.8
+  desired_velocity: 1.0
+  cyclic_goals: true
+  waypoints:
+  - [2.99498, 3.91074, -1.50744]
+  - [3.66499, 3.89311, 16.18921]
+  - [4.21158, 4.05179, -13.3925]
+  - [4.58185, 3.96363, 5.19443]
+  - [4.96975, 3.9989, 5.19443]
+- name: hunav_2
+  model: pedestrian
+  pose: [4.98739, 6.23815, -160.01689]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+    social_force_factor: 10.0
+  velocity: 0.9
+  desired_velocity: 1.1
+  cyclic_goals: true
+  waypoints:
+  - [4.40553, 6.02657, 169.11447]
+  - [3.9471, 6.11473, -164.05461]
+  - [3.32998, 5.93841, 162.07208]
+  - [2.7305, 6.13236, -175.91438]
+  - [1.98996, 6.07947, -175.91438]
+robot:
+  name: robot
+  pose: [3.45341, 2.57071, 86.82017]
+  social_attributes: neutral
+  desired_velocity: 0.8
+  social_yielding: false
+  waypoints:
+  - [3.75315, 7.96608, 86.82017]
+  behavior: Traverse the open classroom toward the right-side activity space, crossing
+    both pedestrian routes nearly perpendicularly with assertive progress.

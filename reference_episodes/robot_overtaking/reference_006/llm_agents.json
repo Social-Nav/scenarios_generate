@@ -2,8 +2,8 @@
   "agents": [
     {
       "name": "hunav_1",
-      "role": "dining area visitor",
-      "model": "female_adult_business_02",
+      "role": "Diner returning to seating",
+      "model": "F_Business_02",
       "from_region": {
         "region_id": 1,
         "label": "dining_area"
@@ -12,19 +12,16 @@
         "region_id": 1,
         "label": "dining_area"
       },
-      "spawn_waypoint": "wp_r01_dining_area_016",
+      "spawn_waypoint": "wp_r01_dining_area_042",
       "waypoints": [
-        "wp_r01_dining_area_017",
-        "wp_r01_dining_area_018",
-        "wp_r01_dining_area_019",
-        "wp_r01_dining_area_020",
-        "wp_r01_dining_area_021",
-        "wp_r01_dining_area_022",
-        "wp_r01_dining_area_023"
+        "wp_r01_dining_area_041",
+        "wp_r01_dining_area_040",
+        "wp_r01_dining_area_039",
+        "wp_r01_dining_area_038"
       ],
-      "velocity": 0.9,
-      "desired_velocity": 1.1,
-      "behavior": "Walk steadily through the open dining passage toward the far side, keeping a straight course between the tables."
+      "velocity": 1.0,
+      "desired_velocity": 1.2,
+      "behavior": "Walk west along the broad aisle between the tables toward the window-side seating, staying ahead of the robot on a nearly straight course."
     }
   ],
   "robot": {
@@ -37,8 +34,8 @@
       "region_id": 1,
       "label": "dining_area"
     },
-    "start_waypoint": "wp_r01_dining_area_015",
-    "goal_waypoint": "wp_r01_dining_area_024",
-    "behavior": "Travel straight through the open central dining passage behind the pedestrian, maintaining a safe following distance and continuing beyond the pedestrian's destination."
+    "start_waypoint": "wp_r01_dining_area_029",
+    "goal_waypoint": "wp_r01_dining_area_055",
+    "behavior": "Travel west through the broad central aisle from behind the diner to a point beyond their destination. Maintain a safe following gap and yield until the diner clears the route."
   }
 }

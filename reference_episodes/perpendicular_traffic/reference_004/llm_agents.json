@@ -1,0 +1,70 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "Classroom participant",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_auto_062",
+      "waypoints": [
+        "wp_r00_classroom_auto_017",
+        "wp_r00_classroom_auto_103",
+        "wp_r00_classroom_auto_144",
+        "wp_r00_classroom_auto_401",
+        "wp_r00_classroom_auto_166"
+      ],
+      "velocity": 0.8,
+      "desired_velocity": 1.0,
+      "behavior_mode": "neutral",
+      "behavior": "Walk toward the rear activity space across the open floor, using normal avoidance when crossing the robot."
+    },
+    {
+      "name": "hunav_2",
+      "role": "Returning participant",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_063",
+      "waypoints": [
+        "wp_r00_classroom_auto_245",
+        "wp_r00_classroom_067",
+        "wp_r00_classroom_auto_108",
+        "wp_r00_classroom_auto_020",
+        "wp_r00_classroom_046"
+      ],
+      "velocity": 0.9,
+      "desired_velocity": 1.1,
+      "behavior_mode": "neutral",
+      "behavior": "Return toward the front activity space along a nearby parallel route in the opposite direction, normally avoiding the robot."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 0,
+      "label": "classroom"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "classroom"
+    },
+    "start_waypoint": "wp_r00_classroom_auto_021",
+    "goal_waypoint": "wp_r00_classroom_076",
+    "social_attributes": "aggressive",
+    "social_yielding": false,
+    "behavior": "Traverse the open classroom toward the right-side activity space, crossing both pedestrian routes nearly perpendicularly with assertive progress."
+  }
+}

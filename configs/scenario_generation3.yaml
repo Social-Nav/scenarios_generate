@@ -1,65 +1,21 @@
 # Edit this file, then run:
-# python3 scripts/generate_scenario_variants.py --config configs/scenario_generation.yaml
+# python3 scripts/generate_scenario_variants.py --config configs/scenario_generation3.yaml
 
-scene_dir: new_grscenes/grscenes_5
+scene_dir: new_grscenes/grscenes_24
 output_root: new_outputs
 llm_config: configs/llm_config.local.yaml
+
+interaction_type: perpendicular_traffic
+prompt_config: configs/scenario_generation_prompt.yaml
+parameter_config: configs/scenario_generation_parameters.yaml
 reference_root: reference_episodes
-# 选择且只选择一个参考集；它也会作为新结果的 interaction_type。
-reference_sets:
-  - robot_overtaking
-# false 时不读取 reference episode，也不会将其加入 LLM prompt。
 include_reference_episodes: true
 
-# Following human
-# prompt: >-
-#   生成1个行人和1条机器人同向运动的直线路线,行人人起点必须位于机器人起点正前方距离1m-2m之间,且行人初始yaw朝向必须和路径方向一致,
-#   行人路线为简单直线,终点与倒数第二个waypoint相隔1.5m-2m.机器人路径由多个waypoints构成,与行人路径完全重叠,
-#   从第一个waypoint开始到行人路径的倒数第二个点作为终点,使得机器人一直跟随行人运动轨迹.尽量选择长的走廊过道或宽阔区域规划路线,
-#   行人desired velocity设置为0.8,机器人社交属性为aggressive,机器人参数配置添加waypoint_tolerance: 0.50和final_goal_tolerance: 0.25.
-
-# Intersection Wait
-# prompt: >-
-#   生成1个行人和1条机器人垂直交叉直线运动的路线,机器人和行人起点均位于由不同障碍物构成的十字路口或T字路口中,场景中有哪种路口就选择哪种，不一定是完全垂直的交叉路口
-#   只要二者路线在路口中心交叉即可,且交叉点在各自路径起始阶段(前三个waypoints之内),即两者刚开始运动时就发生路径冲突，二者的运动轨迹要在障碍物形成的过道之中或者至少在障碍物旁边而不是完全的开阔区域上,
-#   两者路线长度偏短或中等,机器人社交属性为passive,不启用主动让行。
-
-# Intersection Proceed
-# prompt: >-
-#   生成1个行人和1条机器人垂直交叉直线运动的路线,机器人和行人起点均位于由不同障碍物构成的十字路口或T字路口中,
-#   二者路线在路口中心垂直交叉,且交叉点在各自路径起始阶段(前三个waypoints之内),即两者刚开始运动时就发生路径冲突，
-#   两者路线长度偏短或中等,机器人社交属性为aggressive,不启用主动让行,行人社交属性为passive。
-
-# Robot Overtaking
-prompt: >-
-  生成1个行人和1条机器人同方向运动的直线路线,行人人起点必须位于机器人起点正前方距离1m-2m之间,且行人初始yaw朝向必须和路径方向一致,
-  机器人起点必须位于行人起点正后方（以路线运动方向为准）,机器人终点位于行人终点前方,两者路线都是没有大角度弯角(如90度弯角)的较长直线，
-  尽量选择长的走廊过道或宽阔区域规划路线,机器人社交属性为aggressive,行人desired_velocity设为0.3, 机器人参数配置添加final_goal_tolerance: 0.4.
-
-# Pedestrian Overtaking
-# prompt: >-
-#   生成1个行人和1条机器人同方向运动的直线路线,行人起点必须位于机器人起点正后方（以路线运动方向为准）,行人终点位于机器人终点前方,
-#   两者路线都必须是没有大角度弯角(如90度弯角)的较长直线，且各自起点和终点位置接近，尽量选择长的走廊过道或宽阔区域规划路线
-
-# Exiting Room
-# prompt: >-
-#   生成1个行人和1条机器人相向运动的路线,行人和机器人起点分别位于房间外和房间内且靠近门口,
-#   行人向房间内移动，机器人向房间外运动,二者路径冲突发生在该房间门口，尽量选择开阔的房间规划冲突场景，
-#   机器人社交属性为passive,启用主动让行。
-
-# Frontal Approach
-# prompt: >-
-#   生成1个行人和1条机器人相向运动的路线,行人和机器人起点均位于过道中且必须相互靠近,二者运动方向相反并在过道中发生路径冲突,
-#   行人路径终点在过道之外,二者路径长度偏短或中等,行人社交属性为passive,机器人社交属性为neutral,启用主动让行.
-
-
 count: 6
-batch_size: 1
-pedestrians: 1
+batch_size: 6
+# pedestrians: 1
+min_pedestrians: 2
+max_pedestrians: 4
 max_attempts: 3
-
-# true 会重新生成已有的 scenario_001、scenario_002 等结果。
 overwrite: true
-
-# true 只检查配置和输出路径，不调用 LLM。
 dry_run: false

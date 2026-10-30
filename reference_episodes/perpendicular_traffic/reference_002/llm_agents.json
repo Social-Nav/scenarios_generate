@@ -1,0 +1,97 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "classroom walker",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_038",
+      "waypoints": [
+        "wp_r00_classroom_039",
+        "wp_r00_classroom_048",
+        "wp_r00_classroom_047",
+        "wp_r00_classroom_040",
+        "wp_r00_classroom_041",
+        "wp_r00_classroom_042",
+        "wp_r00_classroom_043"
+      ],
+      "desired_velocity": 1.1,
+      "social_force_factor": 10.0,
+      "behavior_mode": "neutral",
+      "behavior": "Walks steadily across the open classroom toward the opposite side."
+    },
+    {
+      "name": "hunav_2",
+      "role": "classroom walker",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_078",
+      "waypoints": [
+        "wp_r00_classroom_046",
+        "wp_r00_classroom_097",
+        "wp_r00_classroom_079",
+        "wp_r00_classroom_080",
+        "wp_r00_classroom_081"
+      ],
+      "desired_velocity": 1.0,
+      "social_force_factor": 10.0,
+      "behavior_mode": "neutral",
+      "behavior": "Moves in the opposite direction along a central classroom aisle."
+    },
+    {
+      "name": "hunav_3",
+      "role": "classroom walker",
+      "model": "pedestrian",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_051",
+      "waypoints": [
+        "wp_r00_classroom_060",
+        "wp_r00_classroom_059",
+        "wp_r00_classroom_058",
+        "wp_r00_classroom_095"
+      ],
+      "desired_velocity": 0.9,
+      "social_force_factor": 10.0,
+      "behavior_mode": "neutral",
+      "behavior": "Crosses the lower open part of the classroom while maintaining a regular pace."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 0,
+      "label": "classroom"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "classroom"
+    },
+    "start_waypoint": "wp_r00_classroom_084",
+    "goal_waypoint": "wp_r00_classroom_024",
+    "desired_velocity": 0.8,
+    "social_attributes": "neutral",
+    "social_yielding": false,
+    "behavior": "Traverses the classroom vertically and crosses the pedestrian flows."
+  }
+}

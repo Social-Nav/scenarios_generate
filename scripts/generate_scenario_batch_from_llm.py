@@ -50,16 +50,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Require and preserve a multi-waypoint robot route.",
     )
-    parser.add_argument(
-        "--robot-tolerances",
-        action="store_true",
-        help="Write waypoint_tolerance and final_goal_tolerance to each robot YAML entry.",
-    )
-    parser.add_argument(
-        "--human-social-force-factor",
-        type=float,
-        help="Optional social_force_factor written to every human YAML entry.",
-    )
+    parser.add_argument("--structured-parameters")
     parser.add_argument(
         "--batch-items",
         required=True,
@@ -142,7 +133,6 @@ def main() -> None:
         args.prompt,
         reference_episodes=reference_episodes,
         robot_intermediate_waypoints=args.robot_intermediate_waypoints,
-        robot_tolerances=args.robot_tolerances,
         batch_agent_counts=[item["agent_count"] for item in items],
         include_reference_episodes=args.include_reference_episodes,
     )
@@ -164,7 +154,7 @@ def main() -> None:
         default_desired_velocity=DEFAULT_DESIRED_VELOCITY,
         round=args.round,
         robot_intermediate_waypoints=args.robot_intermediate_waypoints,
-        human_social_force_factor=args.human_social_force_factor,
+        structured_parameters=json.loads(args.structured_parameters or "{}"),
     )
 
     prepared: list[tuple[dict[str, Any], dict[str, Any], Path]] = []
@@ -195,7 +185,7 @@ def main() -> None:
             waypoint_lookup,
             waypoint_context,
             args.robot_intermediate_waypoints,
-            args.robot_tolerances,
+            conversion_args.structured_parameters,
         )
         variant_dir = output_root / f"scenario_{item['variant_number']:03d}"
         prepared.append((llm_scenario, scenario, variant_dir))

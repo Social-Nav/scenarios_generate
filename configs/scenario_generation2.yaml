@@ -1,7 +1,7 @@
 # Edit this file, then run:
 # python3 scripts/generate_scenario_variants.py --config configs/scenario_generation2.yaml
 
-scene_dir: new_grscenes/grscenes_19
+scene_dir: new_grscenes/grscenes_2
 output_root: new_outputs
 llm_config: configs/llm_config.local.yaml
 
